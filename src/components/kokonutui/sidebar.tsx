@@ -16,6 +16,7 @@ import {
   TrendingUp,
   Zap,
   Layers,
+  Brain,
 } from "lucide-react"
 import { IconBrandCodesandbox } from "@tabler/icons-react"
 import { Home } from "lucide-react"
@@ -68,7 +69,7 @@ export default function Sidebar() {
       >
         <div className="h-full flex flex-col">
           <Link
-            href="https://kokonutui.com/"
+            href="/"
             target="_blank"
             rel="noopener noreferrer"
             className="h-16 px-6 flex items-center border-b border-gray-200 dark:border-[#1F1F23]"
@@ -89,17 +90,11 @@ export default function Sidebar() {
                   Overview
                 </div>
                 <div className="space-y-1">
-                  <NavItem href="#" icon={Home}>
+                  <NavItem href="/dashboard" icon={Home}>
                     Dashboard
                   </NavItem>
-                  <NavItem href="#" icon={BarChart2}>
-                    Markets
-                  </NavItem>
-                  <NavItem href="#" icon={TrendingUp}>
-                    Portfolio
-                  </NavItem>
-                  <NavItem href="#" icon={Layers}>
-                    NFTs
+                  <NavItem href="/ai-trading" icon={Brain}>
+                    AI Trading
                   </NavItem>
                 </div>
               </div>
