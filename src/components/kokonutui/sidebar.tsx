@@ -17,11 +17,10 @@ import {
   Zap,
   Layers,
 } from "lucide-react"
-
+import { IconBrandCodesandbox } from "@tabler/icons-react"
 import { Home } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
-import Image from "next/image"
 
 export default function Sidebar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -75,22 +74,10 @@ export default function Sidebar() {
             className="h-16 px-6 flex items-center border-b border-gray-200 dark:border-[#1F1F23]"
           >
             <div className="flex items-center gap-3">
-              <Image
-                src="https://kokonutui.com/logo.svg"
-                alt="Acme"
-                width={32}
-                height={32}
-                className="flex-shrink-0 hidden dark:block"
-              />
-              <Image
-                src="https://kokonutui.com/logo-black.svg"
-                alt="Acme"
-                width={32}
-                height={32}
-                className="flex-shrink-0 block dark:hidden"
-              />
-              <span className="text-lg font-semibold hover:cursor-pointer text-gray-900 dark:text-white">
-                KokonutUI
+              <IconBrandCodesandbox className="h-8 w-8 flex-shrink-0 hidden dark:block" />
+              <IconBrandCodesandbox className="h-8 w-8 flex-shrink-0 block dark:hidden" />
+              <span className="text-lg font-bold tracking-tight hover:cursor-pointer text-gray-900 dark:text-white">
+                OmniA
               </span>
             </div>
           </Link>
