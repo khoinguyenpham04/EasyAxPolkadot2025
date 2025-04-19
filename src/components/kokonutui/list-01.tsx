@@ -29,6 +29,14 @@ import type { AssetDetails, AssetMetadata, AssetAccount } from '@polkadot/types/
 import type { Option } from '@polkadot/types'; // Import Option type
 import type { AssetId } from '@polkadot/types/interfaces/runtime'; // Import AssetId
 import type { AccountId } from '@polkadot/types/interfaces/runtime'; // Import AccountId
+import { web3Enable, web3FromSource } from '@polkadot/extension-dapp';
+import { ContractPromise } from '@polkadot/api-contract';
+import BN from 'bn.js';
+// Assuming you have the ABI json imported or available
+import SimpleDexMVPAbi from '../../../contracts/artifacts/contracts_swap_sol_SimpleDexMVP.abi'; // Adjust path as needed
+
+// Define the contract address (replace with your actual deployed address)
+const DEX_CONTRACT_ADDRESS = "YOUR_DEPLOYED_DEX_CONTRACT_ADDRESS"; // <-- REPLACE THIS
 
 // Update the AccountItem interface to include additional properties
 interface AccountItem {
@@ -50,11 +58,20 @@ interface List01Props {
   className?: string
 }
 
+// Add api and userAddress to CryptoActionDialog props
+interface CryptoActionDialogProps {
+  crypto: AccountItem;
+  api: ApiPromise | null; // Add api prop
+  userAddress: string | null; // Add userAddress prop
+}
+
 // Add a new CryptoActionDialog component
-function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
+function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProps) {
   const [activeView, setActiveView] = useState<"main" | "send" | "receive" | "swap">("main")
   const [amount, setAmount] = useState("")
   const [address, setAddress] = useState("")
+  const [isSwapping, setIsSwapping] = useState(false);
+  const [swapError, setSwapError] = useState<string | null>(null);
 
   // Sample transaction data
   const transactions = [
@@ -340,93 +357,214 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
     </div>
   )
 
-  // Function to render the swap view
-  const renderSwapView = () => (
-    <div className="p-4 sm:p-6">
-      <div className="mb-6">
-        <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Swap {crypto.title}</h2>
-        <p className="text-zinc-500 dark:text-zinc-400">Exchange {crypto.symbol || 'Asset'} for other cryptocurrencies</p>
-      </div>
+  // --- SWAP LOGIC ---
+  const handleSwapWNDForLSP = async () => {
+    if (!api || !userAddress || !amount || Number(amount) <= 0 || crypto.symbol !== 'WND') {
+      setSwapError("Invalid input or configuration for WND -> LSP swap.");
+      console.error("Swap prerequisites not met:", { api: !!api, userAddress, amount, symbol: crypto.symbol });
+      return;
+    }
 
-      <div className="space-y-6">
-        <div className="space-y-2">
-          <Label htmlFor="from-amount" className="text-zinc-700 dark:text-zinc-300">
-            From
-          </Label>
-          <div className="flex gap-2">
-            <Input
-              id="from-amount"
-              placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
-            />
-            <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
-              {crypto.symbol || 'Tokens'}
+    setIsSwapping(true);
+    setSwapError(null);
+
+    try {
+      // 1. Enable extension (better to do this once on app load)
+      const extensions = await web3Enable('EasyAxPolkadot DApp');
+      if (extensions.length === 0) {
+        throw new Error("Polkadot{.js} extension not found.");
+      }
+
+      // 2. Get signer
+      const injector = await web3FromSource(extensions[0].name); // Use the first enabled extension
+      if (!injector.signer) {
+        throw new Error("Signer not available. Ensure the extension is unlocked and permissions granted.");
+      }
+      api.setSigner(injector.signer);
+
+
+      // 3. Instantiate the contract
+      const contract = new ContractPromise(api, SimpleDexMVPAbi, DEX_CONTRACT_ADDRESS);
+
+      // 4. Prepare the amount (WND uses native decimals)
+      const nativeDecimals = api.registry.chainDecimals[0];
+      const valueToSend = new BN(parseFloat(amount) * (10 ** nativeDecimals)); // Convert input string to BN in Planck
+
+      console.log(`Attempting to swap ${amount} WND (${valueToSend.toString()} Planck)`);
+
+      // 5. Estimate gas (optional but recommended)
+      // For simplicity, using -1 for gasLimit to let the node estimate.
+      // You might want to estimate explicitly:
+      // const { gasRequired } = await contract.query.swapWNDForOther(userAddress, { value: valueToSend });
+      const gasLimit = -1; // Or use estimated gasRequired
+
+      // 6. Call the swap function
+      const unsub = await contract.tx
+        .swapWNDForOther({ value: valueToSend, gasLimit })
+        .signAndSend(userAddress, (result) => {
+          console.log(`Transaction status: ${result.status.type}`);
+
+          if (result.status.isInBlock) {
+            console.log(`Transaction included at blockHash ${result.status.asInBlock}`);
+          } else if (result.status.isFinalized) {
+            console.log(`Transaction finalized at blockHash ${result.status.asFinalized}`);
+            unsub(); // Unsubscribe from status updates
+            setIsSwapping(false);
+            setAmount(""); // Clear amount after successful swap
+            // Optionally: Add success message, close dialog, refresh balances
+            alert("Swap successful!"); // Placeholder feedback
+            setActiveView("main"); // Go back to main view
+          } else if (result.isError) {
+            console.error('Transaction Error:', result.internalError || result.dispatchError || 'Unknown error');
+            let errorMsg = 'Transaction failed.';
+            if (result.dispatchError) {
+              if (result.dispatchError.isModule) {
+                const decoded = api.registry.findMetaError(result.dispatchError.asModule);
+                errorMsg = `Transaction failed: ${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
+              } else {
+                errorMsg = `Transaction failed: ${result.dispatchError.toString()}`;
+              }
+            }
+            throw new Error(errorMsg);
+          }
+        });
+
+    } catch (err: any) {
+      console.error("Swap failed:", err);
+      setSwapError(`Swap failed: ${err.message || String(err)}`);
+      setIsSwapping(false);
+    }
+  };
+  // --- END SWAP LOGIC ---
+
+  // Function to render the swap view
+  const renderSwapView = () => {
+    // Only allow swapping FROM WND in this specific flow
+    const canSwapFrom = crypto.symbol === 'WND';
+    // Assume LSP is the target for now
+    const targetSymbol = 'LSP'; // Replace if you have the actual symbol dynamically
+
+    return (
+      <div className="p-4 sm:p-6">
+        <div className="mb-6">
+          <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Swap {crypto.title}</h2>
+          <p className="text-zinc-500 dark:text-zinc-400">Exchange {crypto.symbol || 'Asset'} for {targetSymbol}</p>
+        </div>
+
+        {!canSwapFrom && (
+          <div className="text-center text-orange-500 bg-orange-100 dark:bg-orange-900/30 p-4 rounded-lg">
+            Swapping from {crypto.symbol} is not yet supported in this direction (requires approval first). Please select WND to swap for {targetSymbol}.
+          </div>
+        )}
+
+        {canSwapFrom && (
+          <div className="space-y-6">
+            {/* From Section */}
+            <div className="space-y-2">
+              <Label htmlFor="from-amount" className="text-zinc-700 dark:text-zinc-300">
+                From
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  id="from-amount"
+                  placeholder="0.00"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  disabled={isSwapping} // Disable input while swapping
+                  className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
+                  type="number" // Use number type for better input handling
+                  step="any"
+                />
+                <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
+                  {crypto.symbol || 'Tokens'} {/* Should be WND here */}
+                </div>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-zinc-500 dark:text-zinc-400">Available: {crypto.balance}</span>
+                <button
+                  className="text-zinc-900 dark:text-zinc-100 font-medium disabled:opacity-50"
+                  onClick={() => setAmount(crypto.balance.split(' ')[0])}
+                  disabled={isSwapping}
+                >
+                  MAX
+                </button>
+              </div>
+            </div>
+
+            {/* Swap Direction Icon */}
+            <div className="flex justify-center">
+              <div className="bg-zinc-100 dark:bg-zinc-800 p-2 rounded-full">
+                {/* Using ArrowDown, assuming 'From' is top, 'To' is bottom */}
+                <ArrowDownLeft className="w-5 h-5 text-zinc-500 dark:text-zinc-400 transform rotate-90" />
+              </div>
+            </div>
+
+            {/* To Section */}
+            <div className="space-y-2">
+              <Label htmlFor="to-amount" className="text-zinc-700 dark:text-zinc-300">
+                To (Estimated)
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  id="to-amount"
+                  placeholder="0.00"
+                  // IMPORTANT: This calculation is a placeholder!
+                  // Replace with actual rate fetched from contract for accuracy.
+                  value={amount && Number(amount) > 0 ? (Number(amount) * 15).toFixed(4) : ""}
+                  readOnly // Estimated amount is read-only
+                  className="flex-1 bg-zinc-200 dark:bg-zinc-700 border-zinc-300 dark:border-zinc-600 cursor-not-allowed"
+                />
+                {/* Hardcode LSP as the target for this WND -> LSP flow */}
+                <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
+                  {targetSymbol}
+                </div>
+              </div>
+              {/* Placeholder rate/fee info */}
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">1 {crypto.symbol} ≈ 15 {targetSymbol} • Fee: Network Fee</p>
+              {/* You might want to fetch and display the actual exchange rate here */}
+            </div>
+
+            {/* Error Display */}
+            {swapError && (
+              <p className="text-sm text-red-500 dark:text-red-400 bg-red-100 dark:bg-red-900/30 p-3 rounded-md">{swapError}</p>
+            )}
+
+            {/* Action Buttons */}
+            <div className="pt-4 space-y-3">
+              <button
+                onClick={handleSwapWNDForLSP}
+                disabled={isSwapping || !amount || Number(amount) <= 0} // Disable if swapping or amount invalid
+                className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-3 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSwapping ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white dark:text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Swapping...
+                  </>
+                ) : (
+                  <>
+                    <ArrowRight className="w-5 h-5" />
+                    <span>Swap WND for {targetSymbol}</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={() => { setActiveView("main"); setSwapError(null); setAmount(""); }} // Reset state on cancel
+                disabled={isSwapping} // Disable cancel while swapping
+                className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
             </div>
           </div>
-          <div className="flex justify-between text-xs">
-            {/* Use formatted balance */}
-            <span className="text-zinc-500 dark:text-zinc-400">Available: {crypto.balance}</span>
-            <button
-              className="text-zinc-900 dark:text-zinc-100 font-medium"
-              // Use formatted balance
-              onClick={() => setAmount(crypto.balance.split(' ')[0])}
-            >
-              MAX
-            </button>
-          </div>
-        </div>
-
-        <div className="flex justify-center">
-          <div className="bg-zinc-100 dark:bg-zinc-800 p-2 rounded-full">
-            <ArrowDownLeft className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="to-amount" className="text-zinc-700 dark:text-zinc-300">
-            To (Estimated)
-          </Label>
-          <div className="flex gap-2">
-            <Input
-              id="to-amount"
-              placeholder="0.00"
-              value={amount ? (Number(amount) * 15).toFixed(2) : ""}
-              readOnly
-              className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
-            />
-            <select
-              aria-label="Select currency to swap to" // Added aria-label
-              className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700"
-            >
-              <option>ETH</option>
-              <option>USDC</option>
-              <option>SOL</option>
-            </select>
-          </div>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">1 {crypto.symbol || 'Asset'} ≈ 15 ETH • Fee: 0.1%</p>
-        </div>
-
-        <div className="pt-4 space-y-3">
-          <button
-            // onClick={() => setActiveView("main")} // Keep user on swap view for now
-            className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-3 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
-          >
-            <ArrowRight className="w-5 h-5" />
-            <span>Swap</span>
-          </button>
-
-          <button
-            onClick={() => setActiveView("main")}
-            className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
+        )}
       </div>
-    </div>
-  )
+    );
+  }
 
   // Render the appropriate view based on the activeView state
   const renderContent = () => {
@@ -729,7 +867,7 @@ export default function List01({ className }: List01Props) { // Remove accounts 
                     </div>
                   </DialogTrigger>
                   {/* Pass the fetched account data to the dialog */}
-                  <CryptoActionDialog crypto={account} />
+                  <CryptoActionDialog crypto={account} api={api} userAddress={userAddress} />
                 </Dialog>
               </div>
             ))

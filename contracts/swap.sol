@@ -37,20 +37,24 @@ interface IAsset {
      * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
      * NOTE: This function is called by the *user* on the *token contract*, not the DEX.
      */
-    // function approve(address spender, uint128 amount) external returns (bool);
+    function approve(address spender, uint128 amount) external returns (bool);
 
     /**
      * @dev Returns the remaining number of tokens that `spender` will be
      * allowed to spend on behalf of `owner`.
      */
-    // function allowance(address owner, address spender) external view returns (uint128);
+    function allowance(
+        address owner,
+        address spender
+    ) external view returns (uint128);
 }
 
 /**
  * @title SimpleDexMVP
- * @dev A minimal DEX contract for swapping native WND for another token (LSP) at a fixed rate.
+ * @dev A minimal DEX contract for swapping native WND for another token (LSP) and vice-versa at a fixed rate.
  * Designed for Polkadot Asset Hub using Solidity (via solang).
  * Assumes WND is the native chain token and LSP is a pallet-assets token.
+ * Uses approve/transferFrom for LSP -> WND swaps.
  */
 contract SimpleDexMVP {
     address public owner;
@@ -244,5 +248,5 @@ contract SimpleDexMVP {
     // --- Fallback ---
     // Optional: Allow the contract to receive the native currency (e.g., WND)
     // This is implicitly handled by payable functions now.
-    // receive() external payable {}
+    receive() external payable {}
 }
