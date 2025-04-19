@@ -32,11 +32,11 @@ export function HeroHeader() {
             variant="default"
             size="sm"
             className="hidden md:flex">
-            <Link href="/#link">Sign In</Link>
+            <Link href="/signin">Sign In</Link>
           </Button>
         </div>
       </div>
     </header>
-    
+
   )
 }

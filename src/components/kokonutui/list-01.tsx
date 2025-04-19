@@ -19,7 +19,16 @@ import {
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+
+// Polkadot API imports
+import { ApiPromise, WsProvider } from '@polkadot/api'; // Import API components
+import { formatBalance, u8aToString } from '@polkadot/util'; // Import balance formatting utility
+import type { AccountInfo } from '@polkadot/types/interfaces/system'; // Import AccountInfo type
+import type { AssetDetails, AssetMetadata, AssetAccount } from '@polkadot/types/interfaces/assets'; // Import Asset types
+import type { Option } from '@polkadot/types'; // Import Option type
+import type { AssetId } from '@polkadot/types/interfaces/runtime'; // Import AssetId
+import type { AccountId } from '@polkadot/types/interfaces/runtime'; // Import AccountId
 
 // Update the AccountItem interface to include additional properties
 interface AccountItem {
@@ -27,11 +36,12 @@ interface AccountItem {
   title: string
   description?: string
   balance: string
-  type: "bitcoin" | "ethereum" | "altcoin" | "stablecoin"
+  type: "bitcoin" | "ethereum" | "altcoin" | "stablecoin" | "native"
   symbol?: string
   price?: string
   change?: string
   changeType?: "up" | "down"
+  decimals: number // Added decimals
 }
 
 interface List01Props {
@@ -40,71 +50,11 @@ interface List01Props {
   className?: string
 }
 
-// Update the ACCOUNTS array to include the new properties
-const ACCOUNTS: AccountItem[] = [
-  {
-    id: "1",
-    title: "Bitcoin",
-    description: "BTC",
-    balance: "0.45 BTC ($18,459.45)",
-    type: "bitcoin",
-    symbol: "BTC",
-    price: "$41,250.00",
-    change: "2.4%",
-    changeType: "up",
-  },
-  {
-    id: "2",
-    title: "Ethereum",
-    description: "ETH",
-    balance: "2.5 ETH ($4,850.00)",
-    type: "ethereum",
-    symbol: "ETH",
-    price: "$1,940.00",
-    change: "1.2%",
-    changeType: "up",
-  },
-  {
-    id: "3",
-    title: "Solana",
-    description: "SOL",
-    balance: "120 SOL ($9,230.80)",
-    type: "altcoin",
-    symbol: "SOL",
-    price: "$76.92",
-    change: "3.5%",
-    changeType: "up",
-  },
-  {
-    id: "4",
-    title: "USDC",
-    description: "Stablecoin",
-    balance: "1,200 USDC ($1,200.00)",
-    type: "stablecoin",
-    symbol: "USDC",
-    price: "$1.00",
-    change: "0.01%",
-    changeType: "down",
-  },
-  {
-    id: "5",
-    title: "Cardano",
-    description: "ADA",
-    balance: "3,000 ADA ($2,800.00)",
-    type: "altcoin",
-    symbol: "ADA",
-    price: "$0.93",
-    change: "1.8%",
-    changeType: "down",
-  },
-]
-
 // Add a new CryptoActionDialog component
 function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
   const [activeView, setActiveView] = useState<"main" | "send" | "receive" | "swap">("main")
   const [amount, setAmount] = useState("")
   const [address, setAddress] = useState("")
-  const [paymentMethod, setPaymentMethod] = useState("card")
 
   // Sample transaction data
   const transactions = [
@@ -282,7 +232,7 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
           </Label>
           <Input
             id="recipient"
-            placeholder={`Enter ${crypto.symbol} address`}
+            placeholder={`Enter ${crypto.symbol || 'Asset'} address`}
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             className="bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
@@ -302,14 +252,16 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
               className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
             />
             <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
-              {crypto.symbol}
+              {crypto.symbol || 'Tokens'}
             </div>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-zinc-500 dark:text-zinc-400">Available: {crypto.balance.split(" ")[0]}</span>
+            {/* Use formatted balance directly */}
+            <span className="text-zinc-500 dark:text-zinc-400">Available: {crypto.balance}</span>
             <button
               className="text-zinc-900 dark:text-zinc-100 font-medium"
-              onClick={() => setAmount(crypto.balance.split(" ")[0])}
+              // Use formatted balance directly for MAX
+              onClick={() => setAmount(crypto.balance.split(' ')[0])}
             >
               MAX
             </button>
@@ -318,11 +270,11 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
 
         <div className="pt-4 space-y-3">
           <button
-            onClick={() => setActiveView("main")}
+            // onClick={() => setActiveView("main")} // Keep user on send view for now
             className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-3 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
           >
             <SendHorizontal className="w-5 h-5" />
-            <span>Send {crypto.symbol}</span>
+            <span>Send {crypto.symbol || 'Asset'}</span>
           </button>
 
           <button
@@ -341,7 +293,7 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
     <div className="p-4 sm:p-6">
       <div className="mb-6">
         <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Receive {crypto.title}</h2>
-        <p className="text-zinc-500 dark:text-zinc-400">Share your address to receive {crypto.symbol}</p>
+        <p className="text-zinc-500 dark:text-zinc-400">Share your address to receive {crypto.symbol || 'Asset'}</p>
       </div>
 
       <div className="flex flex-col items-center justify-center mb-6">
@@ -349,7 +301,7 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
           <QrCode className="w-40 h-40 sm:w-48 sm:h-48 text-zinc-900" />
         </div>
         <p className="text-zinc-500 dark:text-zinc-400 text-sm text-center">
-          Scan this QR code to receive {crypto.symbol}
+          Scan this QR code to receive {crypto.symbol || 'Asset'}
         </p>
       </div>
 
@@ -360,7 +312,7 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
         <div className="flex gap-2">
           <Input
             id="wallet-address"
-            value={`${crypto.symbol.toLowerCase()}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`}
+            value={`${crypto.symbol?.toLowerCase() || 'address'}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`}
             readOnly
             className="flex-1 text-xs bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
           />
@@ -368,14 +320,14 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
             type="button"
             className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
             onClick={() => {
-              navigator.clipboard.writeText(`${crypto.symbol.toLowerCase()}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`)
+              navigator.clipboard.writeText(`${crypto.symbol?.toLowerCase() || 'address'}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`)
             }}
           >
             Copy
           </button>
         </div>
         <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
-          Only send {crypto.symbol} to this address. Sending any other asset may result in permanent loss.
+          Only send {crypto.symbol || 'this asset'} to this address. Sending any other asset may result in permanent loss.
         </p>
       </div>
 
@@ -393,7 +345,7 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
     <div className="p-4 sm:p-6">
       <div className="mb-6">
         <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Swap {crypto.title}</h2>
-        <p className="text-zinc-500 dark:text-zinc-400">Exchange {crypto.symbol} for other cryptocurrencies</p>
+        <p className="text-zinc-500 dark:text-zinc-400">Exchange {crypto.symbol || 'Asset'} for other cryptocurrencies</p>
       </div>
 
       <div className="space-y-6">
@@ -410,14 +362,16 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
               className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
             />
             <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
-              {crypto.symbol}
+              {crypto.symbol || 'Tokens'}
             </div>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-zinc-500 dark:text-zinc-400">Available: {crypto.balance.split(" ")[0]}</span>
+            {/* Use formatted balance */}
+            <span className="text-zinc-500 dark:text-zinc-400">Available: {crypto.balance}</span>
             <button
               className="text-zinc-900 dark:text-zinc-100 font-medium"
-              onClick={() => setAmount(crypto.balance.split(" ")[0])}
+              // Use formatted balance
+              onClick={() => setAmount(crypto.balance.split(' ')[0])}
             >
               MAX
             </button>
@@ -442,18 +396,21 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
               readOnly
               className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
             />
-            <select className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
+            <select
+              aria-label="Select currency to swap to" // Added aria-label
+              className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700"
+            >
               <option>ETH</option>
               <option>USDC</option>
               <option>SOL</option>
             </select>
           </div>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">1 {crypto.symbol} ≈ 15 ETH • Fee: 0.1%</p>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">1 {crypto.symbol || 'Asset'} ≈ 15 ETH • Fee: 0.1%</p>
         </div>
 
         <div className="pt-4 space-y-3">
           <button
-            onClick={() => setActiveView("main")}
+            // onClick={() => setActiveView("main")} // Keep user on swap view for now
             className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-3 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
           >
             <ArrowRight className="w-5 h-5" />
@@ -493,8 +450,215 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
   )
 }
 
-// Update the render function to include the dialog
-export default function List01({ totalBalance = "$36,540.25", accounts = ACCOUNTS, className }: List01Props) {
+// Update the main List01 component
+export default function List01({ className }: List01Props) { // Remove accounts and totalBalance from props for now
+  const [userAddress, setUserAddress] = useState<string | null>(null);
+  const [userAccounts, setUserAccounts] = useState<AccountItem[]>([]);
+  const [totalBalanceValue, setTotalBalanceValue] = useState<number>(0); // Store raw total balance
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [api, setApi] = useState<ApiPromise | null>(null);
+
+  // Effect to get address and connect to API
+  useEffect(() => {
+    const address = localStorage.getItem("userAddress");
+    const endpoint = localStorage.getItem("networkEndpoint");
+    setUserAddress(address);
+    console.log(`Using address: ${address}, endpoint: ${endpoint}`); // Log address and endpoint
+
+    let apiInstance: ApiPromise | null = null; // Variable to hold the instance for cleanup
+
+    if (address && endpoint) {
+      const connectApi = async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+          console.log(`Connecting to endpoint: ${endpoint}...`); // Log connection attempt
+          const provider = new WsProvider(endpoint);
+          apiInstance = await ApiPromise.create({ provider });
+          await apiInstance.isReady;
+          console.log(`Successfully connected to ${apiInstance.runtimeChain} v${apiInstance.runtimeVersion}`);
+          setApi(apiInstance);
+        } catch (err) {
+          console.error("API connection failed:", err);
+          setError(`Failed to connect to the network: ${err instanceof Error ? err.message : String(err)}`);
+          setIsLoading(false);
+        }
+      };
+      connectApi();
+    } else {
+      setError("User address or network endpoint not found in local storage.");
+      setIsLoading(false);
+    }
+
+    // Disconnect API on component unmount or if endpoint/address changes
+    return () => {
+      console.log("Disconnecting API...");
+      apiInstance?.disconnect();
+      setApi(null); // Reset api state on cleanup
+    };
+  }, []); // Run only on mount
+
+  // Effect to fetch balances when API is ready and address is available
+  useEffect(() => {
+    const fetchBalances = async () => {
+      // Ensure API for assets is connected (or connecting) and userAddress exists
+      if (!userAddress) {
+        console.log("UserAddress missing, skipping balance fetch.");
+        setIsLoading(false); // Set loading false if address is missing
+        return;
+      }
+
+      // Set loading true when starting the fetch
+      setIsLoading(true);
+      setError(null);
+      console.log(`Fetching balances for address: ${userAddress}`);
+
+      let relayApi: ApiPromise | null = null;
+      const westendRelayEndpoint = 'wss://westend-rpc.polkadot.io';
+      const fetchedAccounts: AccountItem[] = [];
+
+      try {
+        // 1. Fetch Native WND Balance from Westend Relay Chain
+        try {
+          console.log(`Connecting to Westend Relay Chain (${westendRelayEndpoint}) for native balance...`);
+          const relayProvider = new WsProvider(westendRelayEndpoint);
+          relayApi = await ApiPromise.create({ provider: relayProvider });
+          await relayApi.isReady;
+          console.log(`Successfully connected to ${relayApi.runtimeChain} for native balance.`);
+
+          const { data: balanceData } = await relayApi.query.system.account<AccountInfo>(userAddress);
+          const nativeTokenInfo = relayApi.registry.chainTokens[0];
+          const nativeDecimals = relayApi.registry.chainDecimals[0];
+          const nativeSymbol = nativeTokenInfo || 'WND'; // Default to WND if not found
+          const nativeFree = balanceData.free;
+          console.log(`Raw native free balance (Relay Chain): ${nativeFree.toString()}`);
+
+          if (!nativeFree.isZero()) {
+            const nativeAccount: AccountItem = {
+              id: nativeSymbol,
+              title: nativeSymbol,
+              description: 'Native Token (Westend)',
+              balance: formatBalance(nativeFree, { withSi: false, forceUnit: nativeSymbol, decimals: nativeDecimals }),
+              type: 'native',
+              symbol: nativeSymbol,
+              price: 'N/A',
+              change: 'N/A',
+              changeType: 'up',
+              decimals: nativeDecimals,
+            };
+            fetchedAccounts.push(nativeAccount);
+            console.log("Fetched Native Account (Relay Chain):", nativeAccount);
+          } else {
+            console.log(`Native balance is zero on Westend Relay Chain for address ${userAddress}.`);
+          }
+        } catch (relayErr) {
+          console.error("Failed to connect or fetch native balance from Relay Chain:", relayErr);
+          // Don't set global error yet, maybe asset hub connection works
+        } finally {
+          console.log("Disconnecting temporary Relay Chain API...");
+          await relayApi?.disconnect(); // Disconnect temporary API
+        }
+
+        // 2. Fetch Asset Balances from the primary connected API (e.g., Asset Hub)
+        if (!api || !api.isReady) {
+          console.log("Primary API (for assets) not ready, skipping asset balance fetch.");
+        } else {
+          console.log(`Fetching asset balances from primary connection: ${api.runtimeChain}`);
+          try {
+            console.log("Fetching all asset definitions from primary API...");
+            const assetEntries = await api.query.assets.asset.entries<Option<AssetDetails>, [AssetId]>();
+            console.log(`Found ${assetEntries.length} potential asset definitions on ${api.runtimeChain}.`);
+
+            const assetBalancePromises = assetEntries.map(async ([key, optionalAssetDetails]) => {
+              if (optionalAssetDetails.isNone) return null;
+              const assetId = key.args[0];
+              const optionalAccountData = await api.query.assets.account<Option<AssetAccount>, [AssetId, AccountId]>(assetId, userAddress);
+
+              if (optionalAccountData.isNone) return null;
+              const accountData = optionalAccountData.unwrap();
+              if (accountData.balance.isZero() || accountData.isFrozen.isTrue) return null;
+
+              const optionalMetadata = await api.query.assets.metadata<Option<AssetMetadata>, [AssetId]>(assetId);
+              if (optionalMetadata.isNone) return null;
+              const metadata = optionalMetadata.unwrap();
+
+              const symbol = u8aToString(metadata.symbol);
+              const decimals = metadata.decimals.toNumber();
+              const name = u8aToString(metadata.name);
+
+              // Avoid adding the native token if it somehow appears as an asset
+              if (symbol === 'WND' && fetchedAccounts.some(acc => acc.symbol === 'WND')) {
+                console.log(`Skipping asset ${symbol} as native balance was already fetched.`);
+                return null;
+              }
+
+              return {
+                id: `${api.runtimeChain}-${assetId.toString()}`, // Prefix ID with chain name
+                title: name || `Asset #${assetId.toString()}`,
+                description: `${symbol} (${api.runtimeChain})`, // Add chain context
+                balance: formatBalance(accountData.balance, { withSi: false, forceUnit: symbol, decimals: decimals }),
+                type: 'altcoin',
+                symbol: symbol,
+                price: 'N/A',
+                change: 'N/A',
+                changeType: 'up',
+                decimals: decimals,
+              } as AccountItem;
+            });
+
+            const fetchedAssetAccounts = (await Promise.all(assetBalancePromises)).filter(Boolean) as AccountItem[];
+            console.log(`Fetched Asset Accounts (${api.runtimeChain}):`, fetchedAssetAccounts);
+            fetchedAccounts.push(...fetchedAssetAccounts); // Add assets to the list
+
+          } catch (assetErr) {
+            console.error(`Failed to fetch asset balances from ${api.runtimeChain}:`, assetErr);
+            setError(`Failed to fetch asset balances: ${assetErr instanceof Error ? assetErr.message : String(assetErr)}`);
+          }
+        }
+
+        // Combine native and asset accounts (already done by pushing)
+        setUserAccounts(fetchedAccounts);
+        setTotalBalanceValue(fetchedAccounts.length); // Update placeholder total
+        console.log("Final accounts list being set:", fetchedAccounts);
+
+      } catch (err) {
+        // Catch any broader errors not caught in specific sections
+        console.error("Overall balance fetching failed:", err);
+        setError(`Failed to fetch balances: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setIsLoading(false); // Set loading false after all fetches complete or fail
+        console.log("Balance fetching finished.");
+      }
+    };
+
+    // Debounce or delay fetchBalances slightly after API becomes ready
+    const timer = setTimeout(() => {
+      fetchBalances();
+    }, 100); // Small delay
+
+    return () => clearTimeout(timer); // Clear timeout on cleanup
+
+  }, [api, userAddress]); // Re-run if primary api instance or userAddress changes
+
+  // Format total balance for display (placeholder)
+  const formattedTotalBalance = isLoading ? "Loading..." : `$${totalBalanceValue.toFixed(2)} (Count)`; // Indicate it's a count
+
+  // ... (rest of the return statement)
+
+
+  if (!userAddress) {
+    return <div className={cn("p-4 text-center text-red-500", className)}>User address not found. Please create or import an account.</div>;
+  }
+
+  if (isLoading) {
+    return <div className={cn("p-4 text-center", className)}>Loading assets...</div>;
+  }
+
+  if (error) {
+    return <div className={cn("p-4 text-center text-red-500", className)}>Error: {error}</div>;
+  }
+
   return (
     <div
       className={cn(
@@ -507,73 +671,75 @@ export default function List01({ totalBalance = "$36,540.25", accounts = ACCOUNT
     >
       {/* Total Balance Section */}
       <div className="p-4 border-b border-zinc-100 dark:border-zinc-800">
-        <p className="text-xs text-zinc-600 dark:text-zinc-400">Portfolio Value</p>
-        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{totalBalance}</h1>
+        <p className="text-xs text-zinc-600 dark:text-zinc-400">Portfolio Value (Asset Count)</p>
+        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{formattedTotalBalance}</h1>
       </div>
 
-      {/* Accounts List */}
+      {/* Accounts List - Use fetched userAccounts */}
       <div className="p-3">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-xs font-medium text-zinc-900 dark:text-zinc-100">Your Assets</h2>
         </div>
 
         <div className="space-y-1">
-          {accounts.map((account) => (
-            <div key={account.id} className="w-full">
-              <Dialog>
-                <DialogTrigger className="w-full">
-                  <div
-                    className={cn(
-                      "group flex items-center justify-between w-full",
-                      "p-2 rounded-lg",
-                      "hover:bg-zinc-100 dark:hover:bg-zinc-800/50",
-                      "transition-all duration-200",
-                      "cursor-pointer",
-                    )}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={cn("p-1.5 rounded-lg", {
-                          "bg-orange-100 dark:bg-orange-900/30": account.type === "bitcoin",
-                          "bg-blue-100 dark:bg-blue-900/30": account.type === "ethereum",
-                          "bg-purple-100 dark:bg-purple-900/30": account.type === "altcoin",
-                          "bg-green-100 dark:bg-green-900/30": account.type === "stablecoin",
-                        })}
-                      >
-                        {account.type === "bitcoin" && (
-                          <Wallet className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400" />
-                        )}
-                        {account.type === "ethereum" && (
-                          <QrCode className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                        )}
-                        {account.type === "altcoin" && (
-                          <ArrowUpRight className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                        )}
-                        {account.type === "stablecoin" && (
-                          <CreditCard className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
-                        )}
+          {userAccounts.length > 0 ? (
+            userAccounts.map((account) => (
+              <div key={account.id} className="w-full">
+                <Dialog>
+                  <DialogTrigger className="w-full">
+                    <div
+                      className={cn(
+                        "group flex items-center justify-between w-full",
+                        "p-2 rounded-lg",
+                        "hover:bg-zinc-100 dark:hover:bg-zinc-800/50",
+                        "transition-all duration-200",
+                        "cursor-pointer",
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div
+                          // Refined icon logic based on type/symbol
+                          className={cn("p-1.5 rounded-lg", {
+                            "bg-gray-100 dark:bg-gray-900/30": account.type === 'native',
+                            "bg-orange-100 dark:bg-orange-900/30": account.symbol === 'BTC', // Keep examples
+                            "bg-blue-100 dark:bg-blue-900/30": account.symbol === 'ETH',
+                            "bg-purple-100 dark:bg-purple-900/30": account.type === "altcoin",
+                            "bg-green-100 dark:bg-green-900/30": account.type === "stablecoin",
+                          })}
+                        >
+                          {/* Refined icon rendering */}
+                          {account.type === 'native' && <Wallet className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />}
+                          {account.symbol === 'BTC' && <Bitcoin className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400" />}
+                          {account.symbol === 'ETH' && <QrCode className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />}
+                          {account.type === 'altcoin' && account.symbol !== 'BTC' && account.symbol !== 'ETH' && <ArrowUpRight className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />}
+                          {account.type === 'stablecoin' && <CreditCard className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />}
+                        </div>
+                        <div>
+                          <h3 className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{account.title}</h3>
+                          {account.description && (
+                            <p className="text-[11px] text-zinc-600 dark:text-zinc-400">{account.description}</p>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{account.title}</h3>
-                        {account.description && (
-                          <p className="text-[11px] text-zinc-600 dark:text-zinc-400">{account.description}</p>
-                        )}
-                      </div>
-                    </div>
 
-                    <div className="text-right">
-                      <span className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{account.balance}</span>
+                      <div className="text-right">
+                        {/* Display formatted balance */}
+                        <span className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{account.balance}</span>
+                      </div>
                     </div>
-                  </div>
-                </DialogTrigger>
-                <CryptoActionDialog crypto={account} />
-              </Dialog>
-            </div>
-          ))}
+                  </DialogTrigger>
+                  {/* Pass the fetched account data to the dialog */}
+                  <CryptoActionDialog crypto={account} />
+                </Dialog>
+              </div>
+            ))
+          ) : (
+            <p className="text-center text-zinc-500 dark:text-zinc-400 py-4">No assets found or still loading.</p>
+          )}
         </div>
       </div>
 
-      {/* Updated footer with four buttons */}
+      {/* Footer with four buttons (remains the same) */}
       <div className="p-2 border-t border-zinc-100 dark:border-zinc-800">
         <div className="grid grid-cols-4 gap-2">
           <button
