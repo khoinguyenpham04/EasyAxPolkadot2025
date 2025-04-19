@@ -65,18 +65,7 @@ export default function Content() {
         Coming soon
       </div>
 
-      <div className="bg-white dark:bg-[#0F0F12] rounded-xl p-6 border border-gray-200 dark:border-[#1F1F23]">
-        <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
-          Live Crypto Market
-        </h2>
-        <div className="border dark:border-[#1F1F23] rounded-xl overflow-hidden">
-          <CryptoCurrencyMarket
-            colorTheme="dark"
-            width="100%"
-            height={400}
-          />
-        </div>
-      </div>
+
 
       <div className="bg-white dark:bg-[#0F0F12] rounded-xl p-6 border border-gray-200 dark:border-[#1F1F23]">
         <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">

@@ -11,7 +11,9 @@
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",
     "@polkadot/api": "^15.9.2",
+    "@polkadot/extension-dapp": "^0.58.8",
     "@polkadot/keyring": "^13.4.4",
+    "@polkadot/types": "^15.9.2",
     "@polkadot/util": "^13.4.4",
     "@polkadot/util-crypto": "^13.4.4",
     "@radix-ui/react-accordion": "^1.2.7",
