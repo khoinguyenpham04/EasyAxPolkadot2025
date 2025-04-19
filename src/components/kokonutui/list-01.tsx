@@ -619,7 +619,7 @@ export default function List01({ className }: List01Props) { // Remove accounts 
 
         // Combine native and asset accounts (already done by pushing)
         setUserAccounts(fetchedAccounts);
-        setTotalBalanceValue(fetchedAccounts.length); // Update placeholder total
+        setTotalBalanceValue(Number(fetchedAccounts[0].balance) * 1621.15); // Update placeholder total
         console.log("Final accounts list being set:", fetchedAccounts);
 
       } catch (err) {
@@ -642,7 +642,7 @@ export default function List01({ className }: List01Props) { // Remove accounts 
   }, [api, userAddress]); // Re-run if primary api instance or userAddress changes
 
   // Format total balance for display (placeholder)
-  const formattedTotalBalance = isLoading ? "Loading..." : `$${totalBalanceValue.toFixed(2)} (Count)`; // Indicate it's a count
+  const formattedTotalBalance = isLoading ? "Loading..." : `${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(totalBalanceValue.toFixed(2)))}`; // Indicate it's a count
 
   // ... (rest of the return statement)
 
@@ -671,7 +671,7 @@ export default function List01({ className }: List01Props) { // Remove accounts 
     >
       {/* Total Balance Section */}
       <div className="p-4 border-b border-zinc-100 dark:border-zinc-800">
-        <p className="text-xs text-zinc-600 dark:text-zinc-400">Portfolio Value (Asset Count)</p>
+        <p className="text-xs text-zinc-600 dark:text-zinc-400">Portfolio Value</p>
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{formattedTotalBalance}</h1>
       </div>
 
