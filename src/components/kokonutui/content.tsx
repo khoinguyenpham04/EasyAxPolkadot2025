@@ -1,4 +1,7 @@
+"use client";
+
 import { Calendar, Bitcoin, Coins } from "lucide-react"
+import { CryptoCurrencyMarket } from "react-ts-tradingview-widgets"
 import List01 from "./list-01"
 import List02 from "./list-02"
 import List03 from "./list-03"
@@ -33,6 +36,19 @@ export default function () {
           Market Events
         </h2>
         <List03 />
+      </div>
+
+      <div className="bg-white dark:bg-[#0F0F12] rounded-xl p-6 border border-gray-200 dark:border-[#1F1F23]">
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+          Live Crypto Market
+        </h2>
+          <div className="border dark:border-[#1F1F23] rounded-xl overflow-hidden">
+            <CryptoCurrencyMarket
+            colorTheme="dark"
+            width="100%"
+            height={400}
+            />
+          </div>
       </div>
     </div>
   )

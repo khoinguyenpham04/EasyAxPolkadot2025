@@ -112,9 +112,6 @@ export default function Sidebar() {
                   <NavItem href="#" icon={Bitcoin}>
                     Bitcoin
                   </NavItem>
-                  <NavItem href="#" icon={Coins}>
-                    Altcoins
-                  </NavItem>
                   <NavItem href="#" icon={Zap}>
                     DeFi
                   </NavItem>
