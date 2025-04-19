@@ -1,9 +1,10 @@
-"use client"; // Needed for useState and onClick handlers
+"use client";
 
 import { useState } from "react";
-import CreateAccountFlow from "../../components/CreateAccountFlow"; // We'll create this next
-// Import component placeholder (you'd create this later)
-// import ImportAccountFlow from './components/ImportAccountFlow';
+import CreateAccountFlow from "../../components/CreateAccountFlow";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Shield, Import, KeyRound } from "lucide-react";
 
 export default function Home() {
     const [showAuthOptions, setShowAuthOptions] = useState(false);
@@ -37,63 +38,53 @@ export default function Home() {
     // }
 
     return (
-        <main style={styles.container}>
-            <h1>Welcome to Your Wallet</h1>
+        <main className="flex flex-col items-center justify-center min-h-[80vh] px-6 py-12 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-900 dark:to-zinc-950">
+            <div className="w-full max-w-md mx-auto text-center">
+                <h1 className="text-4xl font-bold tracking-tight mb-6 bg-gradient-to-r from-zinc-900 to-zinc-600 dark:from-zinc-100 dark:to-zinc-400 text-transparent bg-clip-text">
+                    Welcome to Your Wallet
+                </h1>
 
-            {!showAuthOptions && !showCreateFlow && !showImportFlow && (
-                <button onClick={handleSignInClick} style={styles.button}>
-                    Sign In / Get Started
-                </button>
-            )}
-
-            {showAuthOptions && (
-                <div style={styles.authOptions}>
-                    <h2>Choose an option:</h2>
-                    <button onClick={handleCreateClick} style={styles.button}>
-                        Create New Account
-                    </button>
-                    <button
-                        onClick={handleImportClick}
-                        style={{ ...styles.button, ...styles.secondaryButton }}
+                {!showAuthOptions && !showCreateFlow && !showImportFlow && (
+                    <Button 
+                        onClick={handleSignInClick} 
+                        className="w-full py-6 px-8 text-lg justify-center rounded-full bg-gradient-to-b from-blue-500 to-blue-600 text-white focus:ring-2 focus:ring-blue-400 hover:shadow-xl transition duration-200"
+                        size="lg"
                     >
-                        Import Existing Account
-                    </button>
-                </div>
-            )}
+                        <KeyRound className="mr-2 h-6 w-6" />
+                        Sign In / Get Started
+                    </Button>
+                    
+                )}
+
+                {showAuthOptions && (
+                    <Card className="border border-zinc-200 dark:border-zinc-800 shadow-lg">
+                        <CardHeader>
+                            <CardTitle className="text-2xl">Choose an option</CardTitle>
+                            <CardDescription>Create a new wallet or import an existing one</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <Button 
+                                onClick={handleCreateClick} 
+                                className="w-full py-6 text-lg justify-center rounded-lg"
+                                size="lg"
+                            >
+                                <Shield className="mr-2 h-5 w-5" />
+                                Create New Account
+                            </Button>
+                            
+                            <Button 
+                                onClick={handleImportClick} 
+                                variant="outline"
+                                className="w-full py-6 text-lg justify-center rounded-lg border-zinc-300 dark:border-zinc-700"
+                                size="lg"
+                            >
+                                <Import className="mr-2 h-5 w-5" />
+                                Import Existing Account
+                            </Button>
+                        </CardContent>
+                    </Card>
+                )}
+            </div>
         </main>
     );
 }
-
-// Basic Styling (consider using CSS Modules or Tailwind)
-const styles: { [key: string]: React.CSSProperties } = {
-    container: {
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        padding: "40px",
-        fontFamily: "sans-serif",
-    },
-    authOptions: {
-        marginTop: "30px",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: "15px",
-        border: "1px solid #ccc",
-        padding: "30px",
-        borderRadius: "8px",
-    },
-    button: {
-        padding: "12px 25px",
-        fontSize: "16px",
-        cursor: "pointer",
-        backgroundColor: "#0070f3",
-        color: "white",
-        border: "none",
-        borderRadius: "5px",
-    },
-    secondaryButton: {
-        backgroundColor: "#eee",
-        color: "#333",
-    },
-};
