@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'; // Import hooks
 
 import { Calendar, Bitcoin, Coins, Wallet } from "lucide-react"; // Add Wallet icon
-import { CryptoCurrencyMarket } from "react-ts-tradingview-widgets"
+import { CryptoCurrencyMarket } from "react-ts-tradingview-widgets";
 import List01 from "./list-01";
 import List02 from "./list-02";
 import List03 from "./list-03";
