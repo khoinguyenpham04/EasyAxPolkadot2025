@@ -19,7 +19,7 @@ import {
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 
 // Polkadot API imports
 import { ApiPromise, WsProvider } from '@polkadot/api'; // Import API components
@@ -29,6 +29,7 @@ import type { AssetDetails, AssetMetadata, AssetAccount } from '@polkadot/types/
 import type { Option } from '@polkadot/types'; // Import Option type
 import type { AssetId } from '@polkadot/types/interfaces/runtime'; // Import AssetId
 import type { AccountId } from '@polkadot/types/interfaces/runtime'; // Import AccountId
+import { Html5Qrcode, Html5QrcodeScanner } from "html5-qrcode";
 
 // Update the AccountItem interface to include additional properties
 interface AccountItem {
@@ -55,7 +56,26 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
   const [activeView, setActiveView] = useState<"main" | "send" | "receive" | "swap">("main")
   const [amount, setAmount] = useState("")
   const [address, setAddress] = useState("")
+  const [userAddress, setUserAddress] = useState<string | null>(null);
+  
+  // Add QR scanner related states at the top level
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  
+  // Move the useEffect to the component top level
+  useEffect(() => {
+    const address = localStorage.getItem("userAddress");
+    if (address) {
+      setUserAddress(address);
+    }
+  }, []);
 
+  // Function to handle QR code scanning result
+  const handleScanResult = (result: string) => {
+    setAddress(result);
+    setShowScanner(false);
+  };
+  
   // Sample transaction data
   const transactions = [
     {
@@ -91,6 +111,76 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
       time: "07:32",
     },
   ]
+
+  // QR Code Scanner component - moved to top level of CryptoActionDialog
+  const QRScanner = () => {
+    const qrContainerRef = useRef<HTMLDivElement>(null);
+    
+    useEffect(() => {
+      if (!qrContainerRef.current) return;
+      
+      // Clear any previous content
+      qrContainerRef.current.innerHTML = '';
+      
+      // Create instance with container ID, config and callbacks
+      const html5QrcodeScanner = new Html5QrcodeScanner(
+        "qr-reader", 
+        { 
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          rememberLastUsedCamera: true,
+        },
+        /* verbose= */ false
+      );
+      
+      // Define success callback
+      const onScanSuccess = (decodedText: string) => {
+        console.log(`QR Code detected: ${decodedText}`);
+        setAddress(decodedText);
+        
+        // Stop scanning and close scanner
+        html5QrcodeScanner.clear();
+        setShowScanner(false);
+      };
+      
+      // Handle scan failure - just log it
+      const onScanFailure = (error: string) => {
+        // We don't need to show errors for every frame
+        console.log(`QR scan error: ${error}`);
+      };
+      
+      // Render the scanner UI and start scanning
+      html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+      
+      // Clean up on unmount
+      return () => {
+        html5QrcodeScanner.clear().catch(error => {
+          console.error("Failed to clear scanner", error);
+        });
+      };
+    }, []);
+    
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black bg-opacity-80">
+        <div className="bg-white dark:bg-zinc-800 p-4 rounded-lg w-full max-w-sm">
+          <h3 className="text-lg font-medium mb-2 text-center text-zinc-900 dark:text-white">
+            Scan QR Code
+          </h3>
+          <div 
+            id="qr-reader" 
+            ref={qrContainerRef} 
+            className="qr-container"
+          ></div>
+          <button
+            onClick={() => setShowScanner(false)}
+            className="mt-4 w-full bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   // Function to render the main view
   const renderMainView = () => (
@@ -218,127 +308,165 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
   )
 
   // Function to render the send view
-  const renderSendView = () => (
-    <div className="p-4 sm:p-6">
-      <div className="mb-6">
-        <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Send {crypto.title}</h2>
-        <p className="text-zinc-500 dark:text-zinc-400">Transfer {crypto.symbol} to another wallet</p>
-      </div>
-
-      <div className="space-y-6">
-        <div className="space-y-2">
-          <Label htmlFor="recipient" className="text-zinc-700 dark:text-zinc-300">
-            Recipient Address
-          </Label>
-          <Input
-            id="recipient"
-            placeholder={`Enter ${crypto.symbol || 'Asset'} address`}
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            className="bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
-          />
+  const renderSendView = () => {
+    
+    return (
+      <div className="p-4 sm:p-6">
+        {showScanner && <QRScanner />}
+        
+        <div className="mb-6">
+          <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Send {crypto.title}</h2>
+          <p className="text-zinc-500 dark:text-zinc-400">Transfer {crypto.symbol} to another wallet</p>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="send-amount" className="text-zinc-700 dark:text-zinc-300">
-            Amount to Send
-          </Label>
-          <div className="flex gap-2">
-            <Input
-              id="send-amount"
-              placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
-            />
-            <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
-              {crypto.symbol || 'Tokens'}
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="recipient" className="text-zinc-700 dark:text-zinc-300">
+              Recipient Address
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="recipient"
+                placeholder={`Enter ${crypto.symbol || 'Asset'} address`}
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
+              />
+              <button
+                onClick={() => setShowScanner(true)}
+                className="bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white p-2 rounded-lg hover:bg-zinc-300 dark:hover:bg-zinc-700"
+                title="Scan QR Code"
+              >
+                <QrCode className="w-5 h-5" />
+              </button>
             </div>
           </div>
-          <div className="flex justify-between text-xs">
-            {/* Use formatted balance directly */}
-            <span className="text-zinc-500 dark:text-zinc-400">Available: {crypto.balance}</span>
+
+          <div className="space-y-2">
+            <Label htmlFor="send-amount" className="text-zinc-700 dark:text-zinc-300">
+              Amount to Send
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="send-amount"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
+              />
+              <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
+                {crypto.symbol || 'Tokens'}
+              </div>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-zinc-500 dark:text-zinc-400">Available: {crypto.balance}</span>
+              <button
+                className="text-zinc-900 dark:text-zinc-100 font-medium"
+                onClick={() => setAmount(crypto.balance.split(' ')[0])}
+              >
+                MAX
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-4 space-y-3">
             <button
-              className="text-zinc-900 dark:text-zinc-100 font-medium"
-              // Use formatted balance directly for MAX
-              onClick={() => setAmount(crypto.balance.split(' ')[0])}
+              onClick={() => {
+                // Here you would call your actual send function
+                const handleSend = (recipientAddress: string, amountToSend: string) => {
+                  console.log(`Sending ${amountToSend} ${crypto.symbol} to ${recipientAddress}`);
+                  // Implement actual send functionality here
+                  alert(`Transaction initiated: ${amountToSend} ${crypto.symbol} to ${recipientAddress}`);
+                  setActiveView("main");
+                };
+                
+                if (address && amount) {
+                  handleSend(address, amount);
+                } else {
+                  alert("Please enter both recipient address and amount");
+                }
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-3 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
             >
-              MAX
+              <SendHorizontal className="w-5 h-5" />
+              <span>Send {crypto.symbol || 'Asset'}</span>
+            </button>
+
+            <button
+              onClick={() => setActiveView("main")}
+              className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+            >
+              Cancel
             </button>
           </div>
         </div>
-
-        <div className="pt-4 space-y-3">
-          <button
-            // onClick={() => setActiveView("main")} // Keep user on send view for now
-            className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-3 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
-          >
-            <SendHorizontal className="w-5 h-5" />
-            <span>Send {crypto.symbol || 'Asset'}</span>
-          </button>
-
-          <button
-            onClick={() => setActiveView("main")}
-            className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
       </div>
-    </div>
-  )
+    );
+  }
 
   // Function to render the receive view
-  const renderReceiveView = () => (
-    <div className="p-4 sm:p-6">
-      <div className="mb-6">
-        <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Receive {crypto.title}</h2>
-        <p className="text-zinc-500 dark:text-zinc-400">Share your address to receive {crypto.symbol || 'Asset'}</p>
-      </div>
-
-      <div className="flex flex-col items-center justify-center mb-6">
-        <div className="bg-white p-4 rounded-lg mb-4">
-          <QrCode className="w-40 h-40 sm:w-48 sm:h-48 text-zinc-900" />
+  const renderReceiveView = () => {
+    const addressToDisplay = userAddress || `${crypto.symbol?.toLowerCase() || 'address'}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`;
+    
+    return (
+      <div className="p-4 sm:p-6">
+        <div className="mb-6">
+          <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Receive {crypto.title}</h2>
+          <p className="text-zinc-500 dark:text-zinc-400">Share your address to receive {crypto.symbol || 'Asset'}</p>
         </div>
-        <p className="text-zinc-500 dark:text-zinc-400 text-sm text-center">
-          Scan this QR code to receive {crypto.symbol || 'Asset'}
-        </p>
-      </div>
 
-      <div className="space-y-2 mb-6">
-        <Label htmlFor="wallet-address" className="text-zinc-700 dark:text-zinc-300">
-          Your {crypto.title} Address
-        </Label>
-        <div className="flex gap-2">
-          <Input
-            id="wallet-address"
-            value={`${crypto.symbol?.toLowerCase() || 'address'}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`}
-            readOnly
-            className="flex-1 text-xs bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
-          />
-          <button
-            type="button"
-            className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-            onClick={() => {
-              navigator.clipboard.writeText(`${crypto.symbol?.toLowerCase() || 'address'}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`)
-            }}
-          >
-            Copy
-          </button>
+        <div className="flex flex-col items-center justify-center mb-6">
+          <div className="bg-white p-4 rounded-lg mb-4">
+            {userAddress ? (
+              <img 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(userAddress)}`}
+                alt={`${crypto.title} address QR code`}
+                className="w-40 h-40 sm:w-48 sm:h-48"
+              />
+            ) : (
+              <QrCode className="w-40 h-40 sm:w-48 sm:h-48 text-zinc-900" />
+            )}
+          </div>
+          <p className="text-zinc-500 dark:text-zinc-400 text-sm text-center">
+            Scan this QR code to receive {crypto.symbol || 'Asset'}
+          </p>
         </div>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
-          Only send {crypto.symbol || 'this asset'} to this address. Sending any other asset may result in permanent loss.
-        </p>
-      </div>
 
-      <button
-        onClick={() => setActiveView("main")}
-        className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-      >
-        Back to Wallet
-      </button>
-    </div>
-  )
+        <div className="space-y-2 mb-6">
+          <Label htmlFor="wallet-address" className="text-zinc-700 dark:text-zinc-300">
+            Your {crypto.title} Address
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              id="wallet-address"
+              value={addressToDisplay}
+              readOnly
+              className="flex-1 text-xs bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
+            />
+            <button
+              type="button"
+              className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+              onClick={() => {
+                navigator.clipboard.writeText(addressToDisplay)
+              }}
+            >
+              Copy
+            </button>
+          </div>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
+            Only send {crypto.symbol || 'this asset'} to this address. Sending any other asset may result in permanent loss.
+          </p>
+        </div>
+
+        <button
+          onClick={() => setActiveView("main")}
+          className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+        >
+          Back to Wallet
+        </button>
+      </div>
+    );
+  }
 
   // Function to render the swap view
   const renderSwapView = () => (
