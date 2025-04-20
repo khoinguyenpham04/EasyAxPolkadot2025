@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.0",
     "@hookform/resolvers": "^5.0.1",
     "@polkadot/api": "^15.9.2",
     "@polkadot/api-contract": "^15.9.2",
@@ -62,6 +63,7 @@
     "react-resizable-panels": "^2.1.7",
     "react-ts-tradingview-widgets": "^1.2.8",
     "recharts": "^2.15.3",
+    "simple-statistics": "^7.8.8",
     "sonner": "^2.0.3",
     "tailwind-merge": "^3.2.0",
     "vaul": "^1.1.2",
@@ -71,7 +73,7 @@
     "@eslint/eslintrc": "^3",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^20.17.30",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "dotenv": "^16.5.0",
