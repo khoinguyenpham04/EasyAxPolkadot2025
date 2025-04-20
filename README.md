@@ -25,7 +25,7 @@ Omni AI is a decentralized application that combines secure wallet management fo
 
 Check out our video walkthrough:
 [![Omni AI Demo](https://cdn.loom.com/sessions/thumbnails/331aaac6fbea4b37b70c2bd4caffa899-with-play.gif)](https://www.loom.com/share/331aaac6fbea4b37b70c2bd4caffa899)
-- [Demo v1]([https://www.youtube.com/watch?v=1BiVWuq7SzI](https://www.loom.com/share/331aaac6fbea4b37b70c2bd4caffa899))
+- [https://www.youtube.com/watch?v=1BiVWuq7SzI](https://www.loom.com/share/331aaac6fbea4b37b70c2bd4caffa899)
 
 ### Technical Stack
 
