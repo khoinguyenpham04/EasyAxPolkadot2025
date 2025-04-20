@@ -20,17 +20,15 @@ import {
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 
 // Polkadot API imports
 import { ApiPromise, WsProvider } from '@polkadot/api'; // Import API components
 import { formatBalance, u8aToString } from '@polkadot/util'; // Import balance formatting utility
 import type { AccountInfo } from '@polkadot/types/interfaces/system'; // Import AccountInfo type
-import type { AssetId } from '@polkadot/types/interfaces/runtime'; // Import AssetId
-// Removed unused imports:
-// import type { AssetDetails, AssetMetadata } from '@polkadot/types/interfaces/assets';
-// import type { AssetAccount } from '@polkadot/types/interfaces/balances'; 
-// import type { IOption, Codec } from '@polkadot/types/types';
+import type { AssetId, AccountId } from '@polkadot/types/interfaces'; // Import AssetId and AccountId
+import type { AssetAccount, AssetMetadata } from '@polkadot/types/interfaces/assets'; // Import Asset types
+import type { Option } from '@polkadot/types/codec'; // Import Option type
 import { web3Enable, web3FromSource } from '@polkadot/extension-dapp';
 import { ContractPromise } from '@polkadot/api-contract';
 import BN from 'bn.js';
@@ -41,6 +39,7 @@ import SimpleDexMVPAbi from '../../../contracts/artifacts/contracts_swap_sol_Sim
 
 // Define the contract address (replace with your actual deployed address)
 const DEX_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_DEX_CONTRACT_ADDRESS || "YOUR_DEPLOYED_DEX_CONTRACT_ADDRESS"; // <-- REPLACE THIS or use env var
+import { Html5Qrcode, Html5QrcodeScanner } from "html5-qrcode";
 
 // Update the AccountItem interface to include additional properties
 interface AccountItem {
@@ -75,6 +74,26 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
   const [address, setAddress] = useState("")
   const [isSwapping, setIsSwapping] = useState(false);
   const [swapError, setSwapError] = useState<string | null>(null);
+  // Remove userQRAddress state
+  // const [userQRAddress, setUserQRAddress] = useState<string | null>(null);
+
+  // Add QR scanner related states at the top level
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+
+  // Remove the useEffect that was setting userQRAddress
+  // useEffect(() => {
+  //   const address = localStorage.getItem("userQRAddress");
+  //   if (address) {
+  //     setUserQRAddress(address);
+  //   }
+  // }, []);
+
+  // Function to handle QR code scanning result
+  const handleScanResult = (result: string) => {
+    setAddress(result);
+    setShowScanner(false);
+  };
 
   // Sample transaction data (replace with actual data fetching)
   const transactions = [
@@ -111,6 +130,76 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
       time: "07:32",
     },
   ]
+
+  // QR Code Scanner component - moved to top level of CryptoActionDialog
+  const QRScanner = () => {
+    const qrContainerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+      if (!qrContainerRef.current) return;
+
+      // Clear any previous content
+      qrContainerRef.current.innerHTML = '';
+
+      // Create instance with container ID, config and callbacks
+      const html5QrcodeScanner = new Html5QrcodeScanner(
+        "qr-reader",
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          rememberLastUsedCamera: true,
+        },
+        /* verbose= */ false
+      );
+
+      // Define success callback
+      const onScanSuccess = (decodedText: string) => {
+        console.log(`QR Code detected: ${decodedText}`);
+        setAddress(decodedText);
+
+        // Stop scanning and close scanner
+        html5QrcodeScanner.clear();
+        setShowScanner(false);
+      };
+
+      // Handle scan failure - just log it
+      const onScanFailure = (error: string) => {
+        // We don't need to show errors for every frame
+        console.log(`QR scan error: ${error}`);
+      };
+
+      // Render the scanner UI and start scanning
+      html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+
+      // Clean up on unmount
+      return () => {
+        html5QrcodeScanner.clear().catch(error => {
+          console.error("Failed to clear scanner", error);
+        });
+      };
+    }, []);
+
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black bg-opacity-80">
+        <div className="bg-white dark:bg-zinc-800 p-4 rounded-lg w-full max-w-sm">
+          <h3 className="text-lg font-medium mb-2 text-center text-zinc-900 dark:text-white">
+            Scan QR Code
+          </h3>
+          <div
+            id="qr-reader"
+            ref={qrContainerRef}
+            className="qr-container"
+          ></div>
+          <button
+            onClick={() => setShowScanner(false)}
+            className="mt-4 w-full bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   // Function to render the main view
   const renderMainView = () => (
@@ -238,128 +327,169 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
   )
 
   // Function to render the send view
-  const renderSendView = () => (
-    <div className="p-4 sm:p-6">
-      <div className="mb-6">
-        <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Send {crypto.title}</h2>
-        <p className="text-zinc-500 dark:text-zinc-400">Transfer {crypto.symbol} to another wallet</p>
-      </div>
+  const renderSendView = () => {
 
-      <div className="space-y-6">
-        <div className="space-y-2">
-          <Label htmlFor="recipient" className="text-zinc-700 dark:text-zinc-300">
-            Recipient Address
-          </Label>
-          <Input
-            id="recipient"
-            placeholder={`Enter ${crypto.symbol || 'Asset'} address`}
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            className="bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
-          />
+    return (
+      <div className="p-4 sm:p-6">
+        {showScanner && <QRScanner />}
+
+        <div className="mb-6">
+          <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Send {crypto.title}</h2>
+          <p className="text-zinc-500 dark:text-zinc-400">Transfer {crypto.symbol} to another wallet</p>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="send-amount" className="text-zinc-700 dark:text-zinc-300">
-            Amount to Send
-          </Label>
-          <div className="flex gap-2">
-            <Input
-              id="send-amount"
-              placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
-            />
-            <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
-              {crypto.symbol || 'Tokens'}
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="recipient" className="text-zinc-700 dark:text-zinc-300">
+              Recipient Address
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="recipient"
+                placeholder={`Enter ${crypto.symbol || 'Asset'} address`}
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
+              />
+              <button
+                onClick={() => setShowScanner(true)}
+                className="bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white p-2 rounded-lg hover:bg-zinc-300 dark:hover:bg-zinc-700"
+                title="Scan QR Code"
+              >
+                <QrCode className="w-5 h-5" />
+              </button>
             </div>
           </div>
-          <div className="flex justify-between text-xs">
-            {/* Use formatted balance directly */}
-            <span className="text-zinc-500 dark:text-zinc-400">Available: {crypto.balance}</span>
+
+          <div className="space-y-2">
+            <Label htmlFor="send-amount" className="text-zinc-700 dark:text-zinc-300">
+              Amount to Send
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="send-amount"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
+              />
+              <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
+                {crypto.symbol || 'Tokens'}
+              </div>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-zinc-500 dark:text-zinc-400">Available: {crypto.balance}</span>
+              <button
+                className="text-zinc-900 dark:text-zinc-100 font-medium"
+                onClick={() => setAmount(crypto.balance.split(' ')[0])}
+              >
+                MAX
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-4 space-y-3">
             <button
-              className="text-zinc-900 dark:text-zinc-100 font-medium"
-              // Use formatted balance directly for MAX
-              onClick={() => setAmount(crypto.balance.split(' ')[0])}
+              onClick={() => {
+                // Here you would call your actual send function
+                const handleSend = (recipientAddress: string, amountToSend: string) => {
+                  console.log(`Sending ${amountToSend} ${crypto.symbol} to ${recipientAddress}`);
+                  // Implement actual send functionality here
+                  alert(`Transaction initiated: ${amountToSend} ${crypto.symbol} to ${recipientAddress}`);
+                  setActiveView("main");
+                };
+
+                if (address && amount) {
+                  handleSend(address, amount);
+                } else {
+                  alert("Please enter both recipient address and amount");
+                }
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-3 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
             >
-              MAX
+              <SendHorizontal className="w-5 h-5" />
+              <span>Send {crypto.symbol || 'Asset'}</span>
+            </button>
+
+            <button
+              onClick={() => setActiveView("main")}
+              className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+            >
+              Cancel
             </button>
           </div>
         </div>
-
-        <div className="pt-4 space-y-3">
-          <button
-            // onClick={() => setActiveView("main")} // Keep user on send view for now
-            className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-3 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
-          >
-            <SendHorizontal className="w-5 h-5" />
-            <span>Send {crypto.symbol || 'Asset'}</span>
-          </button>
-
-          <button
-            onClick={() => setActiveView("main")}
-            className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
       </div>
-    </div>
-  )
+    );
+  }
 
   // Function to render the receive view
-  const renderReceiveView = () => (
-    <div className="p-4 sm:p-6">
-      <div className="mb-6">
-        <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Receive {crypto.title}</h2>
-        <p className="text-zinc-500 dark:text-zinc-400">Share your address to receive {crypto.symbol || 'Asset'}</p>
-      </div>
+  const renderReceiveView = () => {
+    // Use userAddress directly instead of addressToDisplay
+    // const addressToDisplay = userQRAddress || `${crypto.symbol?.toLowerCase() || 'address'}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`;
 
-      <div className="flex flex-col items-center justify-center mb-6">
-        <div className="bg-white p-4 rounded-lg mb-4">
-          <QrCode className="w-40 h-40 sm:w-48 sm:h-48 text-zinc-900" />
+    // Use a placeholder if userAddress is null
+    const displayAddress = userAddress || `${crypto.symbol?.toLowerCase() || 'address'}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`;
+
+    return (
+      <div className="p-4 sm:p-6">
+        <div className="mb-6">
+          <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Receive {crypto.title}</h2>
+          <p className="text-zinc-500 dark:text-zinc-400">Share your address to receive {crypto.symbol || 'Asset'}</p>
         </div>
-        <p className="text-zinc-500 dark:text-zinc-400 text-sm text-center">
-          Scan this QR code to receive {crypto.symbol || 'Asset'}
-        </p>
-      </div>
 
-      <div className="space-y-2 mb-6">
-        <Label htmlFor="wallet-address" className="text-zinc-700 dark:text-zinc-300">
-          Your {crypto.title} Address
-        </Label>
-        <div className="flex gap-2">
-          <Input
-            id="wallet-address"
-            value={`${crypto.symbol?.toLowerCase() || 'address'}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`}
-            readOnly
-            className="flex-1 text-xs bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
-          />
-          <button
-            type="button"
-            className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-            onClick={() => {
-              navigator.clipboard.writeText(`${crypto.symbol?.toLowerCase() || 'address'}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`)
-            }}
-          >
-            Copy
-          </button>
+        <div className="flex flex-col items-center justify-center mb-6">
+          <div className="bg-white p-4 rounded-lg mb-4">
+            {userAddress ? (
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(userAddress)}`}
+                alt={`${crypto.title} address QR code`}
+                className="w-40 h-40 sm:w-48 sm:h-48"
+              />
+            ) : (
+              <QrCode className="w-40 h-40 sm:w-48 sm:h-48 text-zinc-900" />
+            )}
+          </div>
+          <p className="text-zinc-500 dark:text-zinc-400 text-sm text-center">
+            Scan this QR code to receive {crypto.symbol || 'Asset'}
+          </p>
         </div>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
-          Only send {crypto.symbol || 'this asset'} to this address. Sending any other asset may result in permanent loss.
-        </p>
+
+        <div className="space-y-2 mb-6">
+          <Label htmlFor="wallet-address" className="text-zinc-700 dark:text-zinc-300">
+            Your {crypto.title} Address
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              id="wallet-address"
+              value={displayAddress}
+              readOnly
+              className="flex-1 text-xs bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
+            />
+            <button
+              type="button"
+              className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+              onClick={() => {
+                navigator.clipboard.writeText(displayAddress)
+              }}
+            >
+              Copy
+            </button>
+          </div>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
+            Only send {crypto.symbol || 'this asset'} to this address. Sending any other asset may result in permanent loss.
+          </p>
+        </div>
+
+        <button
+          onClick={() => setActiveView("main")}
+          className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+        >
+          Back to Wallet
+        </button>
       </div>
-
-      <button
-        onClick={() => setActiveView("main")}
-        className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-      >
-        Back to Wallet
-      </button>
-    </div>
-  )
-
+    )
+  }
   // --- SWAP LOGIC ---
   const handleSwapWNDForLSP = async () => {
     // ... (swap logic remains largely the same, ensure DEX_CONTRACT_ADDRESS is valid) ...
@@ -474,7 +604,7 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
                   type="number" // Use number type for better input handling
                   step="any"
                 />
-                <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
+                <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border-zinc-200 dark:border-zinc-700">
                   {crypto.symbol || 'Tokens'} {/* Should be WND here */}
                 </div>
               </div>
@@ -514,7 +644,7 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
                   className="flex-1 bg-zinc-200 dark:bg-zinc-700 border-zinc-300 dark:border-zinc-600 cursor-not-allowed"
                 />
                 {/* Hardcode LSP as the target for this WND -> LSP flow */}
-                <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
+                <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border-zinc-200 dark:border-zinc-700">
                   {targetSymbol}
                 </div>
               </div>
@@ -707,143 +837,89 @@ export default function List01({ className }: List01Props) {
             const assetEntries = await currentApi.query.assets.asset.entries();
             console.log(`Found ${assetEntries.length} potential asset definitions on ${currentApi.runtimeChain}.`);
 
-            const assetBalancePromises = assetEntries.map(async ([key, codecValue]) => {
-              // Check if the assetDetails exists
-              if (!codecValue || codecValue.isEmpty) return null;
+            console.log(`Found ${assetEntries.length} potential asset definitions on ${currentApi.runtimeChain}.`);
 
-              // Extract the asset ID
-              const assetId = key.args[0] as AssetId;
-              console.log(`Processing asset ID: ${assetId.toString()}`);
-
-              // Query the account balance for this asset
-              const accountCodec = await currentApi.query.assets.account(assetId, userAddress);
-
-              // Check if account data exists for this asset
-              if (!accountCodec || accountCodec.isEmpty) {
-                console.log(`No account data for asset ${assetId.toString()}`);
-                return null;
-              }
-
-              // Debug the account data structure
-              console.log(`Account data for asset ${assetId.toString()}:`, accountCodec.toJSON());
-
-              // Try to access account data fields - using JSON to handle different structure formats
+            const assetBalancePromises = assetEntries.map(async ([key, optionalAssetDetails]) => {
               try {
-                // Convert to JSON to handle different response formats
-                const accountDataJson = accountCodec.toJSON() as any;
-
-                // Check balance based on the structure returned
-                let balance: BN | null = null;
-                let isFrozen = false;
-
-                // Handle case where balance is directly in the response
-                if (accountDataJson && typeof accountDataJson.balance === 'number') {
-                  balance = new BN(accountDataJson.balance);
-                  // Check if frozen based on status
-                  if (accountDataJson.status === 'Frozen') {
-                    isFrozen = true;
-                  }
-                }
-                // Handle case where balance might be nested differently
-                else if (accountDataJson && accountDataJson.balance && typeof accountDataJson.balance === 'object') {
-                  if (typeof accountDataJson.balance.balance === 'number') {
-                    balance = new BN(accountDataJson.balance.balance);
-                  }
-                }
-                // Handle legacy structure if needed
-                else {
-                  const accountData = accountCodec as unknown as { balance: BN, isFrozen?: { isTrue: () => boolean } };
-                  if (accountData.balance) {
-                    balance = accountData.balance;
-                  }
-                  if (accountData.isFrozen && accountData.isFrozen.isTrue && accountData.isFrozen.isTrue()) {
-                    isFrozen = true;
-                  }
+                // Check if the assetDetails exists (optionalAssetDetails is Option<AssetDetails>)
+                // We don't strictly need assetDetails here, just the assetId from the key
+                if (!optionalAssetDetails || optionalAssetDetails.isEmpty) {
+                  // console.log(`Asset details empty for key: ${key.toHuman()}`);
+                  // return null; // Don't skip yet, maybe metadata exists
                 }
 
-                // If we couldn't find a balance or it's zero or the account is frozen, skip it
-                if (!balance || balance.isZero() || isFrozen) {
-                  console.log(`Zero balance or frozen asset for ID ${assetId.toString()}`);
+                // Extract the asset ID
+                const assetId = key.args[0] as AssetId;
+                // console.log(`Processing asset ID: ${assetId.toString()}`);
+
+                // 1. Query the account balance for this asset
+                const optionalAccountData = await currentApi.query.assets.account<Option<AssetAccount>>(assetId, userAddress);
+
+                // Check if account data exists and has balance
+                if (optionalAccountData.isNone) {
+                  // console.log(`No account data for asset ${assetId.toString()}`);
                   return null;
                 }
+                const accountData = optionalAccountData.unwrap();
+                if (accountData.balance.isZero() || accountData.isFrozen.isTrue) {
+                  // console.log(`Zero balance or frozen asset for ID ${assetId.toString()}`);
+                  return null;
+                }
+                const balance = accountData.balance; // This is already a BN
 
-                // Get metadata for the asset
-                const metadataCodec = await currentApi.query.assets.metadata(assetId);
+                // 2. Get metadata for the asset
+                const optionalMetadata = await currentApi.query.assets.metadata<Option<AssetMetadata>>(assetId);
 
                 // Check if metadata exists
-                if (!metadataCodec || metadataCodec.isEmpty) {
+                if (optionalMetadata.isNone) {
                   console.log(`No metadata for asset ${assetId.toString()}`);
                   return null;
                 }
+                const metadata = optionalMetadata.unwrap();
 
-                // Handle metadata fields safely with type casting
-                try {
-                  // Initialize variables for metadata
-                  let symbol = 'UNKNOWN';
-                  let decimals = 0;
-                  let assetName = `Asset #${assetId.toString()}`;
+                // 3. Extract metadata fields
+                const symbol = u8aToString(metadata.symbol);
+                const decimals = metadata.decimals.toNumber();
+                const assetName = u8aToString(metadata.name); // Use the actual asset name
 
-                  // Access metadata fields with proper type casting
-                  const metadataObj = metadataCodec.toJSON() as Record<string, any>;
+                // console.log(`Asset metadata: ${assetName} (${symbol}) with ${decimals} decimals, Balance: ${balance.toString()}`);
 
-                  if (metadataObj && metadataObj.symbol) {
-                    // Handle symbol as hex-encoded string
-                    const symbolHex = metadataObj.symbol.slice(2); // Remove '0x' prefix if present
-                    const bytes = new Uint8Array(symbolHex.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || []);
-                    symbol = u8aToString(bytes);
-                  }
-
-                  if (metadataObj && metadataObj.decimals !== undefined) {
-                    decimals = Number(metadataObj.decimals);
-                  }
-
-                  if (metadataObj && metadataObj.name) {
-                    // Handle name as hex-encoded string 
-                    const nameHex = metadataObj.name.slice(2); // Remove '0x' prefix if present
-                    const bytes = new Uint8Array(nameHex.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || []);
-                    assetName = u8aToString(bytes);
-                  }
-
-                  console.log(`Asset metadata: ${assetName} (${symbol}) with ${decimals} decimals`);
-
-                  // Skip if this is a duplicate of a native token we already have
-                  if (symbol === 'WND' && fetchedAccounts.some(acc => acc.symbol === 'WND')) {
-                    console.log(`Skipping asset ${symbol} as native balance was already fetched.`);
-                    return null;
-                  }
-
-                  // Create and return the asset info
-                  return {
-                    id: `${currentApi.runtimeChain}-${assetId.toString()}`,
-                    title: assetName,
-                    description: `${symbol} (${currentApi.runtimeChain})`,
-                    balance: formatBalance(balance, { withSi: false, forceUnit: symbol, decimals: decimals }),
-                    type: 'altcoin',
-                    symbol: symbol,
-                    price: 'N/A', // Placeholder
-                    change: 'N/A', // Placeholder
-                    changeType: 'up', // Placeholder
-                    decimals: decimals,
-                    assetId: assetId.toString(), // Store assetId
-                  } as AccountItem;
-
-                } catch (metadataErr) {
-                  console.warn(`Error extracting metadata for asset ${assetId.toString()}:`, metadataErr);
+                // 4. Skip if this is a duplicate of a native token we already have
+                if (symbol === 'WND' && fetchedAccounts.some(acc => acc.symbol === 'WND')) {
+                  console.log(`Skipping asset ${symbol} as native balance was already fetched.`);
                   return null;
                 }
-              } catch (accountErr) {
-                console.warn(`Error processing account data for asset ${assetId.toString()}:`, accountErr);
-                return null;
+
+                // 5. Create and return the asset info
+                return {
+                  id: `${currentApi.runtimeChain}-${assetId.toString()}`,
+                  title: assetName, // Use the fetched asset name
+                  description: `${symbol} (${currentApi.runtimeChain})`,
+                  balance: formatBalance(balance, { withSi: false, forceUnit: symbol, decimals: decimals }),
+                  type: 'altcoin', // Could refine based on symbol/name later
+                  symbol: symbol,
+                  price: 'N/A', // Placeholder
+                  change: 'N/A', // Placeholder
+                  changeType: 'up', // Placeholder
+                  decimals: decimals,
+                  assetId: assetId.toString(), // Store assetId
+                } as AccountItem;
+
+              } catch (err) {
+                const assetId = key.args[0] as AssetId;
+                console.warn(`Error processing asset ${assetId?.toString() || 'UNKNOWN'}:`, err);
+                return null; // Skip this asset if any error occurs during processing
               }
             });
 
-            const fetchedAssetAccounts = (await Promise.all(assetBalancePromises)).filter(Boolean) as AccountItem[];
+            // Wait for all promises and filter out nulls safely
+            const resolvedAccounts = await Promise.all(assetBalancePromises);
+            const fetchedAssetAccounts = resolvedAccounts.filter((item): item is AccountItem => item !== null);
+
             console.log(`Fetched Asset Accounts (${currentApi.runtimeChain}):`, fetchedAssetAccounts);
             fetchedAccounts.push(...fetchedAssetAccounts);
 
           } catch (assetErr: unknown) {
-            console.error(`Failed to fetch asset balances from ${currentApi.runtimeChain}:`, assetErr);
-            // Corrected variable name from err to assetErr
             setError(`Failed to fetch asset balances: ${assetErr instanceof Error ? assetErr.message : String(assetErr)}`);
           }
         }
@@ -876,10 +952,13 @@ export default function List01({ className }: List01Props) {
 
   }, [api, userAddress]);
 
-  // ... (loading/error/address checks remain the same) ...
 
   // Format total balance for display
   const formattedTotalBalance = isLoading ? "Loading..." : `$${totalBalanceValue.toFixed(2)}`; // Simplified formatting
+
+
+  // ... (rest of the return statement)
+
 
   if (!userAddress) {
     return <div className={cn("p-4 text-center text-red-500", className)}>User address not found. Please create or import an account.</div>;

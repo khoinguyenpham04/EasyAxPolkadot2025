@@ -139,3 +139,29 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Add CSS for HTML5QrcodeScanner */
+.qr-container #qr-reader {
+  width: 100%;
+  max-width: 100%;
+}
+
+.qr-container #qr-reader__dashboard_section_csr button {
+  background-color: rgb(17, 24, 39);
+  color: white;
+  border-radius: 0.375rem;
+  padding: 0.5rem 1rem;
+  margin: 0.5rem 0;
+}
+
+.qr-container #qr-reader__status {
+  color: rgb(17, 24, 39);
+  background-color: rgb(243, 244, 246);
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+}
+
+.qr-container #qr-reader__filescan_input {
+  width: 100%;
+  padding: 0.5rem 0;
+}
