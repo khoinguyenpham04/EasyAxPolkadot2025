@@ -1,176 +1,122 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.0;
 
-/**
- * @title SimpleDexMVP (Revised for Asset Hub Pallet Interaction)
- * @notice Interacts with pallet-assets using low-level calls.
- * Requires correct pallet address, function selector, and SCALE encoding.
- */
-contract SimpleDexMVP {
-    address public owner;
+contract FlexibleForwarder {
+    // Contract owner
+    address public immutable owner;
 
-    // Standard derived address for pallet-assets (from "modl" + "py/asset")
-    // VERIFY this if possible for your specific chain, but it's highly likely correct.
-    address constant PALLET_ASSETS_ADDRESS =
-        0x6d6f646c70792f61737365740000000000000000000000000000000000000000;
+    // Rounding factor (10^13 = 5 decimal places of ETH)
+    uint256 private constant ROUNDING_FACTOR = 10 ** 13;
 
-    // Function selector index for pallet-assets::transfer
-    // !!! EXAMPLE ONLY - MUST BE FOUND FOR YOUR TARGET CHAIN'S RUNTIME VERSION !!!
-    // Common indices are often low numbers like 0x05, 0x08, etc. Check runtime metadata.
-    bytes1 constant TRANSFER_SELECTOR = 0x08; // <<< Placeholder Example! Find the real one!
+    // Gas cost multiplier (500% of actual cost)
+    uint256 private constant GAS_MULTIPLIER = 500;
 
-    uint32 public immutable otherTokenAssetId; // The Asset ID for the specific token (e.g., LSP)
-    uint256 public exchangeRate;
-    uint256 public constant RATE_PRECISION = 10 ** 18;
+    // Minimum reimbursement amount
+    uint256 public minReimbursement = 10 ** 16; // 0.01 ETH or equivalent
 
-    event Swapped(
-        address indexed user,
-        uint32 indexed assetIdOut,
-        uint128 wndAmountIn,
-        uint128 otherTokenAmountOut
+    // Store last reimbursement amount
+    uint256 public lastReimbursement;
+
+    // Event to log reimbursements
+    event GasReimbursed(
+        address indexed recipient,
+        uint256 amount,
+        uint256 exactGasCost
     );
-    event SwappedOtherForWND(
-        address indexed user,
-        uint32 indexed assetIdIn,
-        uint128 otherTokenAmountIn,
-        uint128 wndAmountOut
-    );
-    event RateUpdated(uint256 newRate);
-    event TokensWithdrawn(
-        address indexed tokenAddressOrNative,
-        uint32 indexed assetId,
-        uint128 amount
+    event PaymentForwarded(
+        address indexed sender,
+        address indexed receiver,
+        uint256 amount
     );
 
+    constructor() {
+        owner = msg.sender;
+    }
+
+    // Modifier to restrict functions to owner only
     modifier onlyOwner() {
-        require(msg.sender == owner, "Owner only");
+        require(msg.sender == owner, "Only owner can call this function");
         _;
     }
 
-    constructor(uint32 _otherTokenAssetId, uint256 _initialRate) {
-        owner = msg.sender;
-        otherTokenAssetId = _otherTokenAssetId;
-        exchangeRate = _initialRate;
+    // Function to accept payments that will be stored in the contract
+    receive() external payable onlyOwner {}
+
+    // Fund the contract to enable gas reimbursements (owner only)
+    function fundContract() external payable onlyOwner {}
+
+    // Set minimum reimbursement (owner only)
+    function setMinReimbursement(uint256 newMinimum) external onlyOwner {
+        minReimbursement = newMinimum;
     }
 
-    /**
-     * @dev Swaps WND sent with the transaction for the other token (LSP).
-     * Requires correct SCALE encoding for the pallet-assets transfer call.
-     */
-    function swapWNDForOther() external payable {
-        uint128 wndAmountIn = uint128(msg.value);
-        require(wndAmountIn > 0, "No WND sent");
+    // Forward payment and reimburse gas with increased amount
+    function forwardPayment(
+        address payable sender,
+        address payable receiver
+    ) external payable {
+        // Record starting gas
+        uint256 startGas = gasleft();
 
-        uint128 otherAmountOut = uint128(
-            (uint256(wndAmountIn) * exchangeRate) / RATE_PRECISION
+        // Ensure the sender is the msg.sender
+        require(
+            msg.sender == sender,
+            "Sender must match the transaction sender"
         );
-        require(otherAmountOut > 0, "Output is zero");
+        require(receiver != address(0), "Receiver cannot be zero address");
+        require(sender != receiver, "Sender and receiver must be different");
 
-        // --- Balance Check ---
-        // Reading pallet-assets balance via staticcall from Solidity is very complex.
-        // Reverting for now to indicate it's not implemented.
-        revert("On-chain pallet balance check not implemented");
+        // Forward the exact amount that was sent
+        receiver.transfer(msg.value);
 
-        // --- Pallet Transfer Call ---
-        address recipient = msg.sender; // EVM address
-        uint128 amount = otherAmountOut;
+        // Emit payment forwarded event
+        emit PaymentForwarded(sender, receiver, msg.value);
 
-        // Construct the SCALE encoded call data for:
-        // pallet_assets::transfer(asset_id: Compact<u32>, target: MultiAddress, amount: Compact<u128>)
+        // Calculate gas used so far plus a larger buffer for remaining operations
+        uint256 gasUsed = startGas - gasleft() + 50000; // Increased buffer
 
-        // !!! CRITICAL: The following abi.encodePacked is WRONG for SCALE encoding !!!
-        // !!! You MUST replace this with actual SCALE encoding logic !!!
-        // This likely requires a library or complex manual byte construction.
-        // Example structure (PSEUDOCODE - DO NOT USE):
-        // bytes memory scale_encoded_asset_id = scaleEncodeCompactU32(otherTokenAssetId);
-        // bytes memory scale_encoded_target = scaleEncodeMultiAddressId(recipient); // Assuming target is AccountId32
-        // bytes memory scale_encoded_amount = scaleEncodeCompactU128(amount);
-        // bytes memory data = bytes.concat(
-        //     TRANSFER_SELECTOR,
-        //     scale_encoded_asset_id,
-        //     scale_encoded_target,
-        //     scale_encoded_amount
-        // );
-        bytes memory data; // Placeholder - MUST BE REPLACED WITH ACTUAL SCALE ENCODING
-        revert("SCALE encoding for pallet-assets::transfer not implemented"); // Remove after implementing SCALE encoding
+        // Calculate gas cost with multiplier (500% of actual cost)
+        uint256 exactGasCost = gasUsed * tx.gasprice;
+        uint256 increasedGasCost = (exactGasCost * GAS_MULTIPLIER) / 100;
 
-        // Dispatch the call to the pallet-assets module address
-        (bool success, bytes memory returnData) = PALLET_ASSETS_ADDRESS.call(
-            data
-        );
+        // Round to 5 decimal places
+        uint256 roundedGasCost = (increasedGasCost / ROUNDING_FACTOR) *
+            ROUNDING_FACTOR;
 
-        // Note: `success` only means the low-level call dispatch didn't trap.
-        // It DOES NOT guarantee the Substrate extrinsic succeeded.
-        // Proper checking requires inspecting `returnData` for Substrate errors or monitoring events off-chain.
-        require(success, "Low-level call dispatch failed");
-        // TODO: Optionally decode `returnData` to check for Substrate DispatchError
-
-        emit Swapped(
-            msg.sender,
-            otherTokenAssetId,
-            wndAmountIn,
-            otherAmountOut
-        );
-    }
-
-    // --- swapOtherForWND ---
-    // function swapOtherForWND(uint128 _otherAmountIn) external { ... } // Requires transfer_approved, similar SCALE issues
-
-    // --- Owner Functions ---
-    function setExchangeRate(uint256 _newRate) external onlyOwner {
-        exchangeRate = _newRate;
-        emit RateUpdated(_newRate);
-    }
-
-    /**
-     * @dev Allows owner to withdraw WND or LSP. LSP withdrawal requires pallet-assets call.
-     */
-    function withdrawTokens(
-        address _tokenAddressOrNativeFlag,
-        uint128 _amount
-    ) external onlyOwner {
-        require(_amount > 0, "Withdraw zero");
-
-        if (_tokenAddressOrNativeFlag != address(0)) {
-            // Withdraw LSP (pallet asset)
-            // --- Balance Check ---
-            revert("On-chain pallet balance check not implemented");
-
-            // --- Pallet Transfer Call ---
-            address recipient = owner; // Withdraw to owner
-            uint128 amount = _amount;
-
-            // Construct SCALE encoded call data for pallet_assets::transfer
-            // !!! Same SCALE encoding challenge as in swapWNDForOther !!!
-            bytes memory data; // Placeholder - MUST BE REPLACED WITH ACTUAL SCALE ENCODING
-            revert(
-                "SCALE encoding for pallet-assets::transfer not implemented"
-            ); // Remove after implementing SCALE encoding
-
-            (bool success, bytes memory returnData) = PALLET_ASSETS_ADDRESS
-                .call(data);
-            require(success, "Low-level call dispatch failed");
-            // TODO: Optionally decode `returnData`
-
-            emit TokensWithdrawn(address(1), otherTokenAssetId, _amount);
-        } else {
-            // Withdraw WND (native)
-            uint256 contractNativeBalance = address(this).balance;
-            require(contractNativeBalance >= _amount, "Low WND balance");
-            (bool sent, ) = owner.call{value: _amount}("");
-            require(sent, "WND withdraw fail");
-            emit TokensWithdrawn(address(0), 0, _amount);
+        // Ensure we meet the minimum reimbursement
+        if (roundedGasCost < minReimbursement) {
+            roundedGasCost = minReimbursement;
         }
-    }
 
-    // --- View Functions ---
-    function getContractLSPBalance() external view returns (uint128) {
-        revert(
-            "Reading pallet storage via staticcall requires chain-specific key construction and SCALE decoding - not implemented."
+        // Store the reimbursement amount for reference
+        lastReimbursement = roundedGasCost;
+
+        // Check if contract has enough balance for reimbursement
+        require(
+            address(this).balance >= roundedGasCost,
+            "Insufficient balance for gas reimbursement"
         );
-        return 0;
+
+        // Reimburse with rounded amount
+        payable(sender).transfer(roundedGasCost);
+
+        // Emit event with reimbursement details
+        emit GasReimbursed(sender, roundedGasCost, exactGasCost);
     }
 
-    // --- Fallback ---
-    receive() external payable {}
+    // Check the contract's balance
+    function getBalance() external view returns (uint256) {
+        return address(this).balance;
+    }
+
+    // Get the last reimbursement amount
+    function getLastReimbursement() external view returns (uint256) {
+        return lastReimbursement;
+    }
+
+    // Emergency withdrawal if needed (owner only)
+    function withdrawFunds() external onlyOwner {
+        uint256 balance = address(this).balance;
+        payable(owner).transfer(balance);
+    }
 }
