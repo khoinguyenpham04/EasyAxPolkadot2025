@@ -20,6 +20,12 @@
 ### What is Omni AI?
 Omni AI is a decentralized application that combines secure wallet management for Polkadot-based assets with an AI-powered investment strategy generator. Using Google's Gemini 2.5 Pro, it analyzes user preferences and market conditions to create personalized DeFi protocol allocations, while providing risk assessments and performance projections through Monte Carlo simulations. The platform empowers users to make informed investment decisions within the Polkadot ecosystem.
 
+
+### Demo
+
+Check out our video walkthrough:
+[![Omni AI Demo](https://cdn.loom.com/sessions/thumbnails/331aaac6fbea4b37b70c2bd4caffa899-with-play.gif)](https://www.loom.com/share/331aaac6fbea4b37b70c2bd4caffa899)
+
 ### Technical Stack
 
 #### Smart‑Contract Tooling
