@@ -11,6 +11,7 @@ import {
 import { Keyring } from "@polkadot/keyring";
 import { u8aToHex } from "@polkadot/util";
 import { ApiPromise, WsProvider } from '@polkadot/api'; // Import API components
+import { ethers } from "ethers"; // Import ethers
 
 // UI imports
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -148,12 +149,18 @@ export default function CreateAccountFlow() {
             console.warn("!!! DEBUG ONLY - RAW PRIVATE KEY (HEX) !!!:", privateKeyHex);
             // --- END SECURITY WARNING & DEBUGGING ---
 
+            // 1.5 Derive EVM Address
+            const evmWallet = ethers.Wallet.fromPhrase(mnemonic);
+            const derivedEvmAddress = evmWallet.address;
+            console.log("Derived EVM Address:", derivedEvmAddress);
+
             // 2. "Encrypt" Mnemonic (Placeholder)
             const encryptedMnemonic = await encryptMnemonic(mnemonic, password);
 
             // 3. Store relevant data in Local Storage
             localStorage.setItem("userAddress", derivedAddress);
             localStorage.setItem("userPublicKey", derivedPublicKey);
+            localStorage.setItem("userEvmAddress", derivedEvmAddress); // Store EVM address
             localStorage.setItem("encryptedMnemonic", encryptedMnemonic);
             localStorage.setItem("ss58Format", "42");
             localStorage.setItem("accountName", "My Wallet");
@@ -225,17 +232,17 @@ export default function CreateAccountFlow() {
                                     <Lock className="absolute right-3 top-2.5 h-5 w-5 text-gray-400" />
                                 </div>
                             </div>
-                            
+
                             {error && (
                                 <Alert variant="destructive" className="mt-4">
                                     <AlertCircle className="h-4 w-4" />
                                     <AlertDescription>{error}</AlertDescription>
                                 </Alert>
                             )}
-                            
-                            <Button 
-                                type="submit" 
-                                className="w-full" 
+
+                            <Button
+                                type="submit"
+                                className="w-full"
                                 disabled={!isCryptoReady}
                             >
                                 {!isCryptoReady && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -262,7 +269,7 @@ export default function CreateAccountFlow() {
                                 to recover your account. Do NOT share it with anyone.
                             </AlertDescription>
                         </Alert>
-                        
+
                         <div className="bg-gray-50 dark:bg-gray-900/50 border border-dashed border-gray-300 dark:border-gray-700 rounded-md p-4 font-mono text-center break-all">
                             {mnemonic.split(' ').map((word, i) => (
                                 <span key={i} className="inline-block m-1 px-2 py-1 bg-white dark:bg-gray-800 shadow-sm rounded-md">
@@ -270,25 +277,25 @@ export default function CreateAccountFlow() {
                                 </span>
                             ))}
                         </div>
-                        
+
                         <div className="flex items-center space-x-2">
-                            <Checkbox 
-                                id="mnemonicConfirm" 
-                                checked={mnemonicConfirmed} 
-                                onCheckedChange={() => handleMnemonicConfirmation()} 
+                            <Checkbox
+                                id="mnemonicConfirm"
+                                checked={mnemonicConfirmed}
+                                onCheckedChange={() => handleMnemonicConfirmation()}
                             />
                             <Label htmlFor="mnemonicConfirm" className="text-sm">
                                 I have saved my Secret Recovery Phrase securely
                             </Label>
                         </div>
-                        
+
                         {error && (
                             <Alert variant="destructive">
                                 <AlertCircle className="h-4 w-4" />
                                 <AlertDescription>{error}</AlertDescription>
                             </Alert>
                         )}
-                        
+
                         <Button
                             onClick={handleProceedToDashboard}
                             disabled={!mnemonicConfirmed || !isCryptoReady || isConnecting}
@@ -322,7 +329,7 @@ export default function CreateAccountFlow() {
                         <Alert variant="destructive">
                             <AlertDescription>{error || "An unknown error occurred."}</AlertDescription>
                         </Alert>
-                        
+
                         <Button
                             onClick={() => {
                                 setIsCryptoReady(false);
