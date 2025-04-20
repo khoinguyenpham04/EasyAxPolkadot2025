@@ -1,0 +1,10 @@
+{
+    "user_id": "001",
+    "fund": 20000,
+    "max_exposure": 0.5,
+    "risk_level": "low",
+    "time_horizon": 24,
+    "kill_switch": -0.1,
+    "investment_goals": ["passive_income"],
+    "preferred_activities": ["lenidng","staking"]
+}
