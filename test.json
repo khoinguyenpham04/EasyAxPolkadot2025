@@ -6,5 +6,5 @@
     "time_horizon": 24,
     "kill_switch": -0.1,
     "investment_goals": ["passive_income"],
-    "preferred_activities": ["lenidng","staking"]
+    "preferred_activities": ["lending","staking"]
 }
