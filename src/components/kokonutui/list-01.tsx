@@ -20,7 +20,7 @@ import {
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 
 // Polkadot API imports
 import { ApiPromise, WsProvider } from '@polkadot/api'; // Import API components
@@ -41,6 +41,7 @@ import SimpleDexMVPAbi from '../../../contracts/artifacts/contracts_swap_sol_Sim
 
 // Define the contract address (replace with your actual deployed address)
 const DEX_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_DEX_CONTRACT_ADDRESS || "YOUR_DEPLOYED_DEX_CONTRACT_ADDRESS"; // <-- REPLACE THIS or use env var
+import { Html5Qrcode, Html5QrcodeScanner } from "html5-qrcode";
 
 // Update the AccountItem interface to include additional properties
 interface AccountItem {
@@ -75,6 +76,25 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
   const [address, setAddress] = useState("")
   const [isSwapping, setIsSwapping] = useState(false);
   const [swapError, setSwapError] = useState<string | null>(null);
+  const [userQRAddress, setUserQRAddress] = useState<string | null>(null);
+
+  // Add QR scanner related states at the top level
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+
+  // Move the useEffect to the component top level
+  useEffect(() => {
+    const address = localStorage.getItem("userQRAddress");
+    if (address) {
+      setUserQRAddress(address);
+    }
+  }, []);
+
+  // Function to handle QR code scanning result
+  const handleScanResult = (result: string) => {
+    setAddress(result);
+    setShowScanner(false);
+  };
 
   // Sample transaction data (replace with actual data fetching)
   const transactions = [
@@ -111,6 +131,76 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
       time: "07:32",
     },
   ]
+
+  // QR Code Scanner component - moved to top level of CryptoActionDialog
+  const QRScanner = () => {
+    const qrContainerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+      if (!qrContainerRef.current) return;
+
+      // Clear any previous content
+      qrContainerRef.current.innerHTML = '';
+
+      // Create instance with container ID, config and callbacks
+      const html5QrcodeScanner = new Html5QrcodeScanner(
+        "qr-reader",
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          rememberLastUsedCamera: true,
+        },
+        /* verbose= */ false
+      );
+
+      // Define success callback
+      const onScanSuccess = (decodedText: string) => {
+        console.log(`QR Code detected: ${decodedText}`);
+        setAddress(decodedText);
+
+        // Stop scanning and close scanner
+        html5QrcodeScanner.clear();
+        setShowScanner(false);
+      };
+
+      // Handle scan failure - just log it
+      const onScanFailure = (error: string) => {
+        // We don't need to show errors for every frame
+        console.log(`QR scan error: ${error}`);
+      };
+
+      // Render the scanner UI and start scanning
+      html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+
+      // Clean up on unmount
+      return () => {
+        html5QrcodeScanner.clear().catch(error => {
+          console.error("Failed to clear scanner", error);
+        });
+      };
+    }, []);
+
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black bg-opacity-80">
+        <div className="bg-white dark:bg-zinc-800 p-4 rounded-lg w-full max-w-sm">
+          <h3 className="text-lg font-medium mb-2 text-center text-zinc-900 dark:text-white">
+            Scan QR Code
+          </h3>
+          <div
+            id="qr-reader"
+            ref={qrContainerRef}
+            className="qr-container"
+          ></div>
+          <button
+            onClick={() => setShowScanner(false)}
+            className="mt-4 w-full bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   // Function to render the main view
   const renderMainView = () => (
@@ -238,814 +328,876 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
   )
 
   // Function to render the send view
-  const renderSendView = () => (
-    <div className="p-4 sm:p-6">
-      <div className="mb-6">
-        <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Send {crypto.title}</h2>
-        <p className="text-zinc-500 dark:text-zinc-400">Transfer {crypto.symbol} to another wallet</p>
-      </div>
-
-      <div className="space-y-6">
-        <div className="space-y-2">
-          <Label htmlFor="recipient" className="text-zinc-700 dark:text-zinc-300">
-            Recipient Address
-          </Label>
-          <Input
-            id="recipient"
-            placeholder={`Enter ${crypto.symbol || 'Asset'} address`}
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            className="bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="send-amount" className="text-zinc-700 dark:text-zinc-300">
-            Amount to Send
-          </Label>
-          <div className="flex gap-2">
-            <Input
-              id="send-amount"
-              placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
-            />
-            <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
-              {crypto.symbol || 'Tokens'}
-            </div>
-          </div>
-          <div className="flex justify-between text-xs">
-            {/* Use formatted balance directly */}
-            <span className="text-zinc-500 dark:text-zinc-400">Available: {crypto.balance}</span>
-            <button
-              className="text-zinc-900 dark:text-zinc-100 font-medium"
-              // Use formatted balance directly for MAX
-              onClick={() => setAmount(crypto.balance.split(' ')[0])}
-            >
-              MAX
-            </button>
-          </div>
-        </div>
-
-        <div className="pt-4 space-y-3">
-          <button
-            // onClick={() => setActiveView("main")} // Keep user on send view for now
-            className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-3 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
-          >
-            <SendHorizontal className="w-5 h-5" />
-            <span>Send {crypto.symbol || 'Asset'}</span>
-          </button>
-
-          <button
-            onClick={() => setActiveView("main")}
-            className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-
-  // Function to render the receive view
-  const renderReceiveView = () => (
-    <div className="p-4 sm:p-6">
-      <div className="mb-6">
-        <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Receive {crypto.title}</h2>
-        <p className="text-zinc-500 dark:text-zinc-400">Share your address to receive {crypto.symbol || 'Asset'}</p>
-      </div>
-
-      <div className="flex flex-col items-center justify-center mb-6">
-        <div className="bg-white p-4 rounded-lg mb-4">
-          <QrCode className="w-40 h-40 sm:w-48 sm:h-48 text-zinc-900" />
-        </div>
-        <p className="text-zinc-500 dark:text-zinc-400 text-sm text-center">
-          Scan this QR code to receive {crypto.symbol || 'Asset'}
-        </p>
-      </div>
-
-      <div className="space-y-2 mb-6">
-        <Label htmlFor="wallet-address" className="text-zinc-700 dark:text-zinc-300">
-          Your {crypto.title} Address
-        </Label>
-        <div className="flex gap-2">
-          <Input
-            id="wallet-address"
-            value={`${crypto.symbol?.toLowerCase() || 'address'}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`}
-            readOnly
-            className="flex-1 text-xs bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
-          />
-          <button
-            type="button"
-            className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-            onClick={() => {
-              navigator.clipboard.writeText(`${crypto.symbol?.toLowerCase() || 'address'}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`)
-            }}
-          >
-            Copy
-          </button>
-        </div>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
-          Only send {crypto.symbol || 'this asset'} to this address. Sending any other asset may result in permanent loss.
-        </p>
-      </div>
-
-      <button
-        onClick={() => setActiveView("main")}
-        className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-      >
-        Back to Wallet
-      </button>
-    </div>
-  )
-
-  // --- SWAP LOGIC ---
-  const handleSwapWNDForLSP = async () => {
-    // ... (swap logic remains largely the same, ensure DEX_CONTRACT_ADDRESS is valid) ...
-    if (!api || !userAddress || !amount || Number(amount) <= 0 || crypto.symbol !== 'WND' || !DEX_CONTRACT_ADDRESS || DEX_CONTRACT_ADDRESS === "YOUR_DEPLOYED_DEX_CONTRACT_ADDRESS") {
-      setSwapError("Invalid input, configuration, or contract address for WND -> LSP swap.");
-      console.error("Swap prerequisites not met:", { api: !!api, userAddress, amount, symbol: crypto.symbol, DEX_CONTRACT_ADDRESS });
-      return;
-    }
-
-    setIsSwapping(true);
-    setSwapError(null);
-
-    try {
-      // ... (extension enabling, signer setup) ...
-      const extensions = await web3Enable('EasyAxPolkadot DApp');
-      if (extensions.length === 0) {
-        throw new Error("Polkadot{.js} extension not found.");
-      }
-      const injector = await web3FromSource(extensions[0].name);
-      if (!injector.signer) {
-        throw new Error("Signer not available. Ensure the extension is unlocked and permissions granted.");
-      }
-      // Use the primary API instance for transactions if available
-      const txApi = api;
-      txApi.setSigner(injector.signer);
-
-      const contract = new ContractPromise(txApi, SimpleDexMVPAbi, DEX_CONTRACT_ADDRESS);
-      const nativeDecimals = txApi.registry.chainDecimals[0];
-      const valueToSend = new BN(Math.floor(parseFloat(amount) * (10 ** nativeDecimals))); // Use Math.floor for safety
-
-      console.log(`Attempting to swap ${amount} WND (${valueToSend.toString()} Planck) via contract ${DEX_CONTRACT_ADDRESS}`);
-
-      // Explicitly type gasLimit as WeightV2
-      const gasLimit: WeightV2 = txApi.registry.createType('WeightV2', {
-        refTime: new BN(3000000000), // Adjust based on estimation/benchmarking
-        proofSize: new BN(200000),   // Adjust based on estimation/benchmarking
-      });
-
-      const unsub = await contract.tx
-        .swapWNDForOther({ value: valueToSend, gasLimit })
-        .signAndSend(userAddress, (result) => {
-          // ... (status handling remains the same) ...
-          console.log(`Transaction status: ${result.status.type}`);
-
-          if (result.status.isInBlock) {
-            console.log(`Transaction included at blockHash ${result.status.asInBlock}`);
-          } else if (result.status.isFinalized) {
-            console.log(`Transaction finalized at blockHash ${result.status.asFinalized}`);
-            unsub();
-            setIsSwapping(false);
-            setAmount("");
-            alert("Swap successful!");
-            setActiveView("main");
-            // TODO: Trigger balance refresh here
-          } else if (result.isError) {
-            console.error('Transaction Error:', result.internalError || result.dispatchError || 'Unknown error');
-            let errorMsg = 'Transaction failed.';
-            if (result.dispatchError) {
-              if (result.dispatchError.isModule) {
-                const decoded = txApi.registry.findMetaError(result.dispatchError.asModule);
-                errorMsg = `Transaction failed: ${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
-              } else {
-                errorMsg = `Transaction failed: ${result.dispatchError.toString()}`;
-              }
-            }
-            throw new Error(errorMsg);
-          }
-        });
-
-    } catch (err: unknown) { // Use unknown instead of any
-      console.error("Swap failed:", err);
-      setSwapError(`Swap failed: ${err instanceof Error ? err.message : String(err)}`);
-      setIsSwapping(false);
-    }
-  };
-  // --- END SWAP LOGIC ---
-
-  // Function to render the swap view
-  const renderSwapView = () => {
-    // ... (swap view rendering remains largely the same) ...
-    const canSwapFrom = crypto.symbol === 'WND';
-    const targetSymbol = 'LSP';
+  const renderSendView = () => {
 
     return (
       <div className="p-4 sm:p-6">
+        {showScanner && <QRScanner />}
+
         <div className="mb-6">
-          <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Swap {crypto.title}</h2>
-          <p className="text-zinc-500 dark:text-zinc-400">Exchange {crypto.symbol || 'Asset'} for {targetSymbol}</p>
+          <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Send {crypto.title}</h2>
+          <p className="text-zinc-500 dark:text-zinc-400">Transfer {crypto.symbol} to another wallet</p>
         </div>
 
-        {!canSwapFrom && (
-          <div className="text-center text-orange-500 bg-orange-100 dark:bg-orange-900/30 p-4 rounded-lg">
-            Swapping from {crypto.symbol} is not yet supported in this direction (requires approval first). Please select WND to swap for {targetSymbol}.
-          </div>
-        )}
-
-        {canSwapFrom && (
-          <div className="space-y-6">
-            {/* From Section */}
-            <div className="space-y-2">
-              <Label htmlFor="from-amount" className="text-zinc-700 dark:text-zinc-300">
-                From
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  id="from-amount"
-                  placeholder="0.00"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  disabled={isSwapping} // Disable input while swapping
-                  className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
-                  type="number" // Use number type for better input handling
-                  step="any"
-                />
-                <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
-                  {crypto.symbol || 'Tokens'} {/* Should be WND here */}
-                </div>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-zinc-500 dark:text-zinc-400">Available: {crypto.balance}</span>
-                <button
-                  className="text-zinc-900 dark:text-zinc-100 font-medium disabled:opacity-50"
-                  onClick={() => setAmount(crypto.balance.split(' ')[0])}
-                  disabled={isSwapping}
-                >
-                  MAX
-                </button>
-              </div>
-            </div>
-
-            {/* Swap Direction Icon */}
-            <div className="flex justify-center">
-              <div className="bg-zinc-100 dark:bg-zinc-800 p-2 rounded-full">
-                {/* Use ArrowDown */}
-                <ArrowDown className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
-              </div>
-            </div>
-
-            {/* To Section */}
-            <div className="space-y-2">
-              <Label htmlFor="to-amount" className="text-zinc-700 dark:text-zinc-300">
-                To (Estimated)
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  id="to-amount"
-                  placeholder="0.00"
-                  // IMPORTANT: This calculation is a placeholder!
-                  // Replace with actual rate fetched from contract for accuracy.
-                  value={amount && Number(amount) > 0 ? (Number(amount) * 15).toFixed(4) : ""}
-                  readOnly // Estimated amount is read-only
-                  className="flex-1 bg-zinc-200 dark:bg-zinc-700 border-zinc-300 dark:border-zinc-600 cursor-not-allowed"
-                />
-                {/* Hardcode LSP as the target for this WND -> LSP flow */}
-                <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
-                  {targetSymbol}
-                </div>
-              </div>
-              {/* Placeholder rate/fee info */}
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">1 {crypto.symbol} ≈ 15 {targetSymbol} • Fee: Network Fee</p>
-              {/* You might want to fetch and display the actual exchange rate here */}
-            </div>
-
-            {/* Error Display */}
-            {swapError && (
-              <p className="text-sm text-red-500 dark:text-red-400 bg-red-100 dark:bg-red-900/30 p-3 rounded-md">{swapError}</p>
-            )}
-
-            {/* Action Buttons */}
-            <div className="pt-4 space-y-3">
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="recipient" className="text-zinc-700 dark:text-zinc-300">
+              Recipient Address
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="recipient"
+                placeholder={`Enter ${crypto.symbol || 'Asset'} address`}
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
+              />
               <button
-                onClick={handleSwapWNDForLSP}
-                disabled={isSwapping || !amount || Number(amount) <= 0} // Disable if swapping or amount invalid
-                className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-3 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setShowScanner(true)}
+                className="bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white p-2 rounded-lg hover:bg-zinc-300 dark:hover:bg-zinc-700"
+                title="Scan QR Code"
               >
-                {isSwapping ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white dark:text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Swapping...
-                  </>
-                ) : (
-                  <>
-                    <ArrowRight className="w-5 h-5" />
-                    <span>Swap WND for {targetSymbol}</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                onClick={() => { setActiveView("main"); setSwapError(null); setAmount(""); }} // Reset state on cancel
-                disabled={isSwapping} // Disable cancel while swapping
-                className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50"
-              >
-                Cancel
+                <QrCode className="w-5 h-5" />
               </button>
             </div>
           </div>
-        )}
+
+          <div className="space-y-2">
+            <Label htmlFor="send-amount" className="text-zinc-700 dark:text-zinc-300">
+              Amount to Send
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="send-amount"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
+              />
+              <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
+                {crypto.symbol || 'Tokens'}
+              </div>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-zinc-500 dark:text-zinc-400">Available: {crypto.balance}</span>
+              <button
+                className="text-zinc-900 dark:text-zinc-100 font-medium"
+                onClick={() => setAmount(crypto.balance.split(' ')[0])}
+              >
+                MAX
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-4 space-y-3">
+            <button
+              onClick={() => {
+                // Here you would call your actual send function
+                const handleSend = (recipientAddress: string, amountToSend: string) => {
+                  console.log(`Sending ${amountToSend} ${crypto.symbol} to ${recipientAddress}`);
+                  // Implement actual send functionality here
+                  alert(`Transaction initiated: ${amountToSend} ${crypto.symbol} to ${recipientAddress}`);
+                  setActiveView("main");
+                };
+
+                if (address && amount) {
+                  handleSend(address, amount);
+                } else {
+                  alert("Please enter both recipient address and amount");
+                }
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-3 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
+            >
+              <SendHorizontal className="w-5 h-5" />
+              <span>Send {crypto.symbol || 'Asset'}</span>
+            </button>
+
+            <button
+              onClick={() => setActiveView("main")}
+              className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
 
-  // Render the appropriate view based on the activeView state
-  const renderContent = () => {
-    switch (activeView) {
-      case "send":
-        return renderSendView()
-      case "receive":
-        return renderReceiveView()
-      case "swap":
-        return renderSwapView()
-      default:
-        return renderMainView()
-    }
-  }
+  // Function to render the receive view
+  const renderReceiveView = () => {
+    const addressToDisplay = userQRAddress || `${crypto.symbol?.toLowerCase() || 'address'}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`;
 
-  return (
-    <DialogContent className="sm:max-w-[650px] md:max-w-[700px] p-0 border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden">
-      {/* Content based on active view - remove extra padding */}
-      <div className="max-h-[75vh] overflow-y-auto rounded-lg">{renderContent()}</div>
-    </DialogContent>
-  )
-}
+    return (
+      <div className="p-4 sm:p-6">
+        <div className="mb-6">
+          <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Receive {crypto.title}</h2>
+          <p className="text-zinc-500 dark:text-zinc-400">Share your address to receive {crypto.symbol || 'Asset'}</p>
+        </div>
 
-// Update the main List01 component
-export default function List01({ className }: List01Props) {
-  const [userAddress, setUserAddress] = useState<string | null>(null);
-  const [userAccounts, setUserAccounts] = useState<AccountItem[]>([]);
-  const [totalBalanceValue, setTotalBalanceValue] = useState<number>(0); // Store raw total balance
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [api, setApi] = useState<ApiPromise | null>(null);
+        <div className="flex flex-col items-center justify-center mb-6">
+          <div className="bg-white p-4 rounded-lg mb-4">
+            {userQRAddress ? (
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(userQRAddress)}`}
+                alt={`${crypto.title} address QR code`}
+                className="w-40 h-40 sm:w-48 sm:h-48"
+              />
+            ) : (
+              <QrCode className="w-40 h-40 sm:w-48 sm:h-48 text-zinc-900" />
+            )}
+          </div>
+          <p className="text-zinc-500 dark:text-zinc-400 text-sm text-center">
+            Scan this QR code to receive {crypto.symbol || 'Asset'}
+          </p>
+        </div>
 
-  // Effect to get address and connect to API
-  useEffect(() => {
-    const address = localStorage.getItem("userAddress");
-    const endpoint = localStorage.getItem("networkEndpoint");
-    setUserAddress(address);
-    console.log(`Using address: ${address}, endpoint: ${endpoint}`); // Log address and endpoint
+        <div className="space-y-2 mb-6">
+          <Label htmlFor="wallet-address" className="text-zinc-700 dark:text-zinc-300">
+            Your {crypto.title} Address
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              id="wallet-address"
+              value={addressToDisplay}
+              readOnly
+              className="flex-1 text-xs bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
+            />
+            <button
+              type="button"
+              className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+              onClick={() => {
+                navigator.clipboard.writeText(addressToDisplay)
+              }}
+            >
+              Copy
+            </button>
+          </div>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
+            Only send {crypto.symbol || 'this asset'} to this address. Sending any other asset may result in permanent loss.
+          </p>
+        </div>
 
-    let apiInstance: ApiPromise | null = null; // Variable to hold the instance for cleanup
+        <button
+          onClick={() => setActiveView("main")}
+          className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+        >
+          Back to Wallet
+        </button>
+      </div>
+    )
 
-    if (address && endpoint) {
-      const connectApi = async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-          console.log(`Connecting to endpoint: ${endpoint}...`); // Log connection attempt
-          const provider = new WsProvider(endpoint);
-          apiInstance = await ApiPromise.create({ provider });
-          await apiInstance.isReady;
-          console.log(`Successfully connected to ${apiInstance.runtimeChain} v${apiInstance.runtimeVersion}`);
-          setApi(apiInstance);
-        } catch (err) {
-          console.error("API connection failed:", err);
-          setError(`Failed to connect to the network: ${err instanceof Error ? err.message : String(err)}`);
-          setIsLoading(false);
-        }
-      };
-      connectApi();
-    } else {
-      setError("User address or network endpoint not found in local storage.");
-      setIsLoading(false);
-    }
-
-    // Disconnect API on component unmount or if endpoint/address changes
-    return () => {
-      console.log("Disconnecting API...");
-      apiInstance?.disconnect();
-      setApi(null); // Reset api state on cleanup
-    };
-  }, []); // Run only on mount
-
-  // Effect to fetch balances when API is ready and address is available
-  useEffect(() => {
-    const fetchBalances = async () => {
-      // ... (balance fetching logic remains largely the same) ...
-      if (!userAddress) {
-        console.log("UserAddress missing, skipping balance fetch.");
-        setIsLoading(false);
+    // --- SWAP LOGIC ---
+    const handleSwapWNDForLSP = async () => {
+      // ... (swap logic remains largely the same, ensure DEX_CONTRACT_ADDRESS is valid) ...
+      if (!api || !userAddress || !amount || Number(amount) <= 0 || crypto.symbol !== 'WND' || !DEX_CONTRACT_ADDRESS || DEX_CONTRACT_ADDRESS === "YOUR_DEPLOYED_DEX_CONTRACT_ADDRESS") {
+        setSwapError("Invalid input, configuration, or contract address for WND -> LSP swap.");
+        console.error("Swap prerequisites not met:", { api: !!api, userAddress, amount, symbol: crypto.symbol, DEX_CONTRACT_ADDRESS });
         return;
       }
 
-      setIsLoading(true);
-      setError(null);
-      console.log(`Fetching balances for address: ${userAddress}`);
-
-      let nativeApi: ApiPromise | null = null;
-      const westendAssetHubEndpoint = 'wss://westend-asset-hub-rpc.polkadot.io';
-      const fetchedAccounts: AccountItem[] = [];
+      setIsSwapping(true);
+      setSwapError(null);
 
       try {
-        // 1. Fetch Native Balance from Westend Asset Hub
-        try {
-          console.log(`Connecting to Westend Asset Hub (${westendAssetHubEndpoint}) for native balance...`);
-          const nativeProvider = new WsProvider(westendAssetHubEndpoint);
-          nativeApi = await ApiPromise.create({ provider: nativeProvider });
-          await nativeApi.isReady;
-          console.log(`Successfully connected to ${nativeApi.runtimeChain} (Asset Hub) for native balance.`);
+        // ... (extension enabling, signer setup) ...
+        const extensions = await web3Enable('EasyAxPolkadot DApp');
+        if (extensions.length === 0) {
+          throw new Error("Polkadot{.js} extension not found.");
+        }
+        const injector = await web3FromSource(extensions[0].name);
+        if (!injector.signer) {
+          throw new Error("Signer not available. Ensure the extension is unlocked and permissions granted.");
+        }
+        // Use the primary API instance for transactions if available
+        const txApi = api;
+        txApi.setSigner(injector.signer);
 
-          const { data: balanceData } = await nativeApi.query.system.account<AccountInfo>(userAddress);
-          const nativeTokenInfo = nativeApi.registry.chainTokens[0];
-          const nativeDecimals = nativeApi.registry.chainDecimals[0];
-          const nativeSymbol = nativeTokenInfo || 'WND';
-          const nativeFree = balanceData.free;
-          console.log(`Raw native free balance (Asset Hub): ${nativeFree.toString()}`);
+        const contract = new ContractPromise(txApi, SimpleDexMVPAbi, DEX_CONTRACT_ADDRESS);
+        const nativeDecimals = txApi.registry.chainDecimals[0];
+        const valueToSend = new BN(Math.floor(parseFloat(amount) * (10 ** nativeDecimals))); // Use Math.floor for safety
 
-          if (!nativeFree.isZero()) {
-            const nativeAccount: AccountItem = {
-              id: nativeSymbol,
-              title: nativeSymbol,
-              description: `Native Token (${nativeApi.runtimeChain})`,
-              balance: formatBalance(nativeFree, { withSi: false, forceUnit: nativeSymbol, decimals: nativeDecimals }),
-              type: 'native',
-              symbol: nativeSymbol,
-              price: 'N/A',
-              change: 'N/A',
-              changeType: 'up',
-              decimals: nativeDecimals,
-            };
-            fetchedAccounts.push(nativeAccount);
-            console.log("Fetched Native Account (Asset Hub):", nativeAccount);
-          } else {
-            console.log(`Native balance is zero on Westend Asset Hub for address ${userAddress}.`);
+        console.log(`Attempting to swap ${amount} WND (${valueToSend.toString()} Planck) via contract ${DEX_CONTRACT_ADDRESS}`);
+
+        // Explicitly type gasLimit as WeightV2
+        const gasLimit: WeightV2 = txApi.registry.createType('WeightV2', {
+          refTime: new BN(3000000000), // Adjust based on estimation/benchmarking
+          proofSize: new BN(200000),   // Adjust based on estimation/benchmarking
+        });
+
+        const unsub = await contract.tx
+          .swapWNDForOther({ value: valueToSend, gasLimit })
+          .signAndSend(userAddress, (result) => {
+            // ... (status handling remains the same) ...
+            console.log(`Transaction status: ${result.status.type}`);
+
+            if (result.status.isInBlock) {
+              console.log(`Transaction included at blockHash ${result.status.asInBlock}`);
+            } else if (result.status.isFinalized) {
+              console.log(`Transaction finalized at blockHash ${result.status.asFinalized}`);
+              unsub();
+              setIsSwapping(false);
+              setAmount("");
+              alert("Swap successful!");
+              setActiveView("main");
+              // TODO: Trigger balance refresh here
+            } else if (result.isError) {
+              console.error('Transaction Error:', result.internalError || result.dispatchError || 'Unknown error');
+              let errorMsg = 'Transaction failed.';
+              if (result.dispatchError) {
+                if (result.dispatchError.isModule) {
+                  const decoded = txApi.registry.findMetaError(result.dispatchError.asModule);
+                  errorMsg = `Transaction failed: ${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
+                } else {
+                  errorMsg = `Transaction failed: ${result.dispatchError.toString()}`;
+                }
+              }
+              throw new Error(errorMsg);
+            }
+          });
+
+      } catch (err: unknown) { // Use unknown instead of any
+        console.error("Swap failed:", err);
+        setSwapError(`Swap failed: ${err instanceof Error ? err.message : String(err)}`);
+        setIsSwapping(false);
+      }
+    };
+    // --- END SWAP LOGIC ---
+
+    // Function to render the swap view
+    const renderSwapView = () => {
+      // ... (swap view rendering remains largely the same) ...
+      const canSwapFrom = crypto.symbol === 'WND';
+      const targetSymbol = 'LSP';
+
+      return (
+        <div className="p-4 sm:p-6">
+          <div className="mb-6">
+            <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Swap {crypto.title}</h2>
+            <p className="text-zinc-500 dark:text-zinc-400">Exchange {crypto.symbol || 'Asset'} for {targetSymbol}</p>
+          </div>
+
+          {!canSwapFrom && (
+            <div className="text-center text-orange-500 bg-orange-100 dark:bg-orange-900/30 p-4 rounded-lg">
+              Swapping from {crypto.symbol} is not yet supported in this direction (requires approval first). Please select WND to swap for {targetSymbol}.
+            </div>
+          )}
+
+          {canSwapFrom && (
+            <div className="space-y-6">
+              {/* From Section */}
+              <div className="space-y-2">
+                <Label htmlFor="from-amount" className="text-zinc-700 dark:text-zinc-300">
+                  From
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="from-amount"
+                    placeholder="0.00"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    disabled={isSwapping} // Disable input while swapping
+                    className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
+                    type="number" // Use number type for better input handling
+                    step="any"
+                  />
+                  <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
+                    {crypto.symbol || 'Tokens'} {/* Should be WND here */}
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-zinc-500 dark:text-zinc-400">Available: {crypto.balance}</span>
+                  <button
+                    className="text-zinc-900 dark:text-zinc-100 font-medium disabled:opacity-50"
+                    onClick={() => setAmount(crypto.balance.split(' ')[0])}
+                    disabled={isSwapping}
+                  >
+                    MAX
+                  </button>
+                </div>
+              </div>
+
+              {/* Swap Direction Icon */}
+              <div className="flex justify-center">
+                <div className="bg-zinc-100 dark:bg-zinc-800 p-2 rounded-full">
+                  {/* Use ArrowDown */}
+                  <ArrowDown className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
+                </div>
+              </div>
+
+              {/* To Section */}
+              <div className="space-y-2">
+                <Label htmlFor="to-amount" className="text-zinc-700 dark:text-zinc-300">
+                  To (Estimated)
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="to-amount"
+                    placeholder="0.00"
+                    // IMPORTANT: This calculation is a placeholder!
+                    // Replace with actual rate fetched from contract for accuracy.
+                    value={amount && Number(amount) > 0 ? (Number(amount) * 15).toFixed(4) : ""}
+                    readOnly // Estimated amount is read-only
+                    className="flex-1 bg-zinc-200 dark:bg-zinc-700 border-zinc-300 dark:border-zinc-600 cursor-not-allowed"
+                  />
+                  {/* Hardcode LSP as the target for this WND -> LSP flow */}
+                  <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
+                    {targetSymbol}
+                  </div>
+                </div>
+                {/* Placeholder rate/fee info */}
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">1 {crypto.symbol} ≈ 15 {targetSymbol} • Fee: Network Fee</p>
+                {/* You might want to fetch and display the actual exchange rate here */}
+              </div>
+
+              {/* Error Display */}
+              {swapError && (
+                <p className="text-sm text-red-500 dark:text-red-400 bg-red-100 dark:bg-red-900/30 p-3 rounded-md">{swapError}</p>
+              )}
+
+              {/* Action Buttons */}
+              <div className="pt-4 space-y-3">
+                <button
+                  onClick={handleSwapWNDForLSP}
+                  disabled={isSwapping || !amount || Number(amount) <= 0} // Disable if swapping or amount invalid
+                  className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-3 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSwapping ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white dark:text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Swapping...
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRight className="w-5 h-5" />
+                      <span>Swap WND for {targetSymbol}</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => { setActiveView("main"); setSwapError(null); setAmount(""); }} // Reset state on cancel
+                  disabled={isSwapping} // Disable cancel while swapping
+                  className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Render the appropriate view based on the activeView state
+    const renderContent = () => {
+      switch (activeView) {
+        case "send":
+          return renderSendView()
+        case "receive":
+          return renderReceiveView()
+        case "swap":
+          return renderSwapView()
+        default:
+          return renderMainView()
+      }
+    }
+
+    return (
+      <DialogContent className="sm:max-w-[650px] md:max-w-[700px] p-0 border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden">
+        {/* Content based on active view - remove extra padding */}
+        <div className="max-h-[75vh] overflow-y-auto rounded-lg">{renderContent()}</div>
+      </DialogContent>
+    )
+  }
+
+  // Update the main List01 component
+  export default function List01({ className }: List01Props) {
+    const [userAddress, setUserAddress] = useState<string | null>(null);
+    const [userAccounts, setUserAccounts] = useState<AccountItem[]>([]);
+    const [totalBalanceValue, setTotalBalanceValue] = useState<number>(0); // Store raw total balance
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [api, setApi] = useState<ApiPromise | null>(null);
+
+    // Effect to get address and connect to API
+    useEffect(() => {
+      const address = localStorage.getItem("userAddress");
+      const endpoint = localStorage.getItem("networkEndpoint");
+      setUserAddress(address);
+      console.log(`Using address: ${address}, endpoint: ${endpoint}`); // Log address and endpoint
+
+      let apiInstance: ApiPromise | null = null; // Variable to hold the instance for cleanup
+
+      if (address && endpoint) {
+        const connectApi = async () => {
+          setIsLoading(true);
+          setError(null);
+          try {
+            console.log(`Connecting to endpoint: ${endpoint}...`); // Log connection attempt
+            const provider = new WsProvider(endpoint);
+            apiInstance = await ApiPromise.create({ provider });
+            await apiInstance.isReady;
+            console.log(`Successfully connected to ${apiInstance.runtimeChain} v${apiInstance.runtimeVersion}`);
+            setApi(apiInstance);
+          } catch (err) {
+            console.error("API connection failed:", err);
+            setError(`Failed to connect to the network: ${err instanceof Error ? err.message : String(err)}`);
+            setIsLoading(false);
           }
-        } catch (nativeErr: unknown) { // Use unknown instead of any
-          console.error("Failed to connect or fetch native balance from Asset Hub:", nativeErr);
-          // Optionally set a specific error state for native balance failure
-        } finally {
-          console.log("Disconnecting temporary Asset Hub API...");
-          await nativeApi?.disconnect();
+        };
+        connectApi();
+      } else {
+        setError("User address or network endpoint not found in local storage.");
+        setIsLoading(false);
+      }
+
+      // Disconnect API on component unmount or if endpoint/address changes
+      return () => {
+        console.log("Disconnecting API...");
+        apiInstance?.disconnect();
+        setApi(null); // Reset api state on cleanup
+      };
+    }, []); // Run only on mount
+
+    // Effect to fetch balances when API is ready and address is available
+    useEffect(() => {
+      const fetchBalances = async () => {
+        // ... (balance fetching logic remains largely the same) ...
+        if (!userAddress) {
+          console.log("UserAddress missing, skipping balance fetch.");
+          setIsLoading(false);
+          return;
         }
 
-        // 2. Fetch Asset Balances from the primary connected API
-        if (!api || !api.isReady) {
-          console.log("Primary API (for assets) not ready, skipping asset balance fetch.");
-        } else {
-          const currentApi = api;
-          console.log(`Fetching asset balances from primary connection: ${currentApi.runtimeChain}`);
+        setIsLoading(true);
+        setError(null);
+        console.log(`Fetching balances for address: ${userAddress}`);
+
+        let nativeApi: ApiPromise | null = null;
+        const westendAssetHubEndpoint = 'wss://westend-asset-hub-rpc.polkadot.io';
+        const fetchedAccounts: AccountItem[] = [];
+
+        try {
+          // 1. Fetch Native Balance from Westend Asset Hub
           try {
-            console.log("Fetching all asset definitions from primary API...");
-            const assetEntries = await currentApi.query.assets.asset.entries();
-            console.log(`Found ${assetEntries.length} potential asset definitions on ${currentApi.runtimeChain}.`);
+            console.log(`Connecting to Westend Asset Hub (${westendAssetHubEndpoint}) for native balance...`);
+            const nativeProvider = new WsProvider(westendAssetHubEndpoint);
+            nativeApi = await ApiPromise.create({ provider: nativeProvider });
+            await nativeApi.isReady;
+            console.log(`Successfully connected to ${nativeApi.runtimeChain} (Asset Hub) for native balance.`);
 
-            const assetBalancePromises = assetEntries.map(async ([key, codecValue]) => {
-              // Check if the assetDetails exists
-              if (!codecValue || codecValue.isEmpty) return null;
+            const { data: balanceData } = await nativeApi.query.system.account<AccountInfo>(userAddress);
+            const nativeTokenInfo = nativeApi.registry.chainTokens[0];
+            const nativeDecimals = nativeApi.registry.chainDecimals[0];
+            const nativeSymbol = nativeTokenInfo || 'WND';
+            const nativeFree = balanceData.free;
+            console.log(`Raw native free balance (Asset Hub): ${nativeFree.toString()}`);
 
-              // Extract the asset ID
-              const assetId = key.args[0] as AssetId;
-              console.log(`Processing asset ID: ${assetId.toString()}`);
+            if (!nativeFree.isZero()) {
+              const nativeAccount: AccountItem = {
+                id: nativeSymbol,
+                title: nativeSymbol,
+                description: `Native Token (${nativeApi.runtimeChain})`,
+                balance: formatBalance(nativeFree, { withSi: false, forceUnit: nativeSymbol, decimals: nativeDecimals }),
+                type: 'native',
+                symbol: nativeSymbol,
+                price: 'N/A',
+                change: 'N/A',
+                changeType: 'up',
+                decimals: nativeDecimals,
+              };
+              fetchedAccounts.push(nativeAccount);
+              console.log("Fetched Native Account (Asset Hub):", nativeAccount);
+            } else {
+              console.log(`Native balance is zero on Westend Asset Hub for address ${userAddress}.`);
+            }
+          } catch (nativeErr: unknown) { // Use unknown instead of any
+            console.error("Failed to connect or fetch native balance from Asset Hub:", nativeErr);
+            // Optionally set a specific error state for native balance failure
+          } finally {
+            console.log("Disconnecting temporary Asset Hub API...");
+            await nativeApi?.disconnect();
+          }
 
-              // Query the account balance for this asset
-              const accountCodec = await currentApi.query.assets.account(assetId, userAddress);
+          // 2. Fetch Asset Balances from the primary connected API
+          if (!api || !api.isReady) {
+            console.log("Primary API (for assets) not ready, skipping asset balance fetch.");
+          } else {
+            const currentApi = api;
+            console.log(`Fetching asset balances from primary connection: ${currentApi.runtimeChain}`);
+            try {
+              console.log("Fetching all asset definitions from primary API...");
+              const assetEntries = await currentApi.query.assets.asset.entries();
+              console.log(`Found ${assetEntries.length} potential asset definitions on ${currentApi.runtimeChain}.`);
 
-              // Check if account data exists for this asset
-              if (!accountCodec || accountCodec.isEmpty) {
-                console.log(`No account data for asset ${assetId.toString()}`);
-                return null;
-              }
+              const assetBalancePromises = assetEntries.map(async ([key, codecValue]) => {
+                // Check if the assetDetails exists
+                if (!codecValue || codecValue.isEmpty) return null;
 
-              // Debug the account data structure
-              console.log(`Account data for asset ${assetId.toString()}:`, accountCodec.toJSON());
+                // Extract the asset ID
+                const assetId = key.args[0] as AssetId;
+                console.log(`Processing asset ID: ${assetId.toString()}`);
 
-              // Try to access account data fields - using JSON to handle different structure formats
-              try {
-                // Convert to JSON to handle different response formats
-                const accountDataJson = accountCodec.toJSON() as any;
+                // Query the account balance for this asset
+                const accountCodec = await currentApi.query.assets.account(assetId, userAddress);
 
-                // Check balance based on the structure returned
-                let balance: BN | null = null;
-                let isFrozen = false;
-
-                // Handle case where balance is directly in the response
-                if (accountDataJson && typeof accountDataJson.balance === 'number') {
-                  balance = new BN(accountDataJson.balance);
-                  // Check if frozen based on status
-                  if (accountDataJson.status === 'Frozen') {
-                    isFrozen = true;
-                  }
-                }
-                // Handle case where balance might be nested differently
-                else if (accountDataJson && accountDataJson.balance && typeof accountDataJson.balance === 'object') {
-                  if (typeof accountDataJson.balance.balance === 'number') {
-                    balance = new BN(accountDataJson.balance.balance);
-                  }
-                }
-                // Handle legacy structure if needed
-                else {
-                  const accountData = accountCodec as unknown as { balance: BN, isFrozen?: { isTrue: () => boolean } };
-                  if (accountData.balance) {
-                    balance = accountData.balance;
-                  }
-                  if (accountData.isFrozen && accountData.isFrozen.isTrue && accountData.isFrozen.isTrue()) {
-                    isFrozen = true;
-                  }
-                }
-
-                // If we couldn't find a balance or it's zero or the account is frozen, skip it
-                if (!balance || balance.isZero() || isFrozen) {
-                  console.log(`Zero balance or frozen asset for ID ${assetId.toString()}`);
+                // Check if account data exists for this asset
+                if (!accountCodec || accountCodec.isEmpty) {
+                  console.log(`No account data for asset ${assetId.toString()}`);
                   return null;
                 }
 
-                // Get metadata for the asset
-                const metadataCodec = await currentApi.query.assets.metadata(assetId);
+                // Debug the account data structure
+                console.log(`Account data for asset ${assetId.toString()}:`, accountCodec.toJSON());
 
-                // Check if metadata exists
-                if (!metadataCodec || metadataCodec.isEmpty) {
-                  console.log(`No metadata for asset ${assetId.toString()}`);
-                  return null;
-                }
-
-                // Handle metadata fields safely with type casting
+                // Try to access account data fields - using JSON to handle different structure formats
                 try {
-                  // Initialize variables for metadata
-                  let symbol = 'UNKNOWN';
-                  let decimals = 0;
-                  let assetName = `Asset #${assetId.toString()}`;
+                  // Convert to JSON to handle different response formats
+                  const accountDataJson = accountCodec.toJSON() as any;
 
-                  // Access metadata fields with proper type casting
-                  const metadataObj = metadataCodec.toJSON() as Record<string, any>;
+                  // Check balance based on the structure returned
+                  let balance: BN | null = null;
+                  let isFrozen = false;
 
-                  if (metadataObj && metadataObj.symbol) {
-                    // Handle symbol as hex-encoded string
-                    const symbolHex = metadataObj.symbol.slice(2); // Remove '0x' prefix if present
-                    const bytes = new Uint8Array(symbolHex.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || []);
-                    symbol = u8aToString(bytes);
+                  // Handle case where balance is directly in the response
+                  if (accountDataJson && typeof accountDataJson.balance === 'number') {
+                    balance = new BN(accountDataJson.balance);
+                    // Check if frozen based on status
+                    if (accountDataJson.status === 'Frozen') {
+                      isFrozen = true;
+                    }
+                  }
+                  // Handle case where balance might be nested differently
+                  else if (accountDataJson && accountDataJson.balance && typeof accountDataJson.balance === 'object') {
+                    if (typeof accountDataJson.balance.balance === 'number') {
+                      balance = new BN(accountDataJson.balance.balance);
+                    }
+                  }
+                  // Handle legacy structure if needed
+                  else {
+                    const accountData = accountCodec as unknown as { balance: BN, isFrozen?: { isTrue: () => boolean } };
+                    if (accountData.balance) {
+                      balance = accountData.balance;
+                    }
+                    if (accountData.isFrozen && accountData.isFrozen.isTrue && accountData.isFrozen.isTrue()) {
+                      isFrozen = true;
+                    }
                   }
 
-                  if (metadataObj && metadataObj.decimals !== undefined) {
-                    decimals = Number(metadataObj.decimals);
-                  }
-
-                  if (metadataObj && metadataObj.name) {
-                    // Handle name as hex-encoded string 
-                    const nameHex = metadataObj.name.slice(2); // Remove '0x' prefix if present
-                    const bytes = new Uint8Array(nameHex.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || []);
-                    assetName = u8aToString(bytes);
-                  }
-
-                  console.log(`Asset metadata: ${assetName} (${symbol}) with ${decimals} decimals`);
-
-                  // Skip if this is a duplicate of a native token we already have
-                  if (symbol === 'WND' && fetchedAccounts.some(acc => acc.symbol === 'WND')) {
-                    console.log(`Skipping asset ${symbol} as native balance was already fetched.`);
+                  // If we couldn't find a balance or it's zero or the account is frozen, skip it
+                  if (!balance || balance.isZero() || isFrozen) {
+                    console.log(`Zero balance or frozen asset for ID ${assetId.toString()}`);
                     return null;
                   }
 
-                  // Create and return the asset info
-                  return {
-                    id: `${currentApi.runtimeChain}-${assetId.toString()}`,
-                    title: assetName,
-                    description: `${symbol} (${currentApi.runtimeChain})`,
-                    balance: formatBalance(balance, { withSi: false, forceUnit: symbol, decimals: decimals }),
-                    type: 'altcoin',
-                    symbol: symbol,
-                    price: 'N/A', // Placeholder
-                    change: 'N/A', // Placeholder
-                    changeType: 'up', // Placeholder
-                    decimals: decimals,
-                    assetId: assetId.toString(), // Store assetId
-                  } as AccountItem;
+                  // Get metadata for the asset
+                  const metadataCodec = await currentApi.query.assets.metadata(assetId);
 
-                } catch (metadataErr) {
-                  console.warn(`Error extracting metadata for asset ${assetId.toString()}:`, metadataErr);
-                  return null;
-                }
-              } catch (accountErr) {
-                console.warn(`Error processing account data for asset ${assetId.toString()}:`, accountErr);
-                return null;
-              }
-            });
+                  // Check if metadata exists
+                  if (!metadataCodec || metadataCodec.isEmpty) {
+                    console.log(`No metadata for asset ${assetId.toString()}`);
+                    return null;
+                  }
 
-            const fetchedAssetAccounts = (await Promise.all(assetBalancePromises)).filter(Boolean) as AccountItem[];
-            console.log(`Fetched Asset Accounts (${currentApi.runtimeChain}):`, fetchedAssetAccounts);
-            fetchedAccounts.push(...fetchedAssetAccounts);
+                  // Handle metadata fields safely with type casting
+                  try {
+                    // Initialize variables for metadata
+                    let symbol = 'UNKNOWN';
+                    let decimals = 0;
+                    let assetName = `Asset #${assetId.toString()}`;
 
-          } catch (assetErr: unknown) {
-            console.error(`Failed to fetch asset balances from ${currentApi.runtimeChain}:`, assetErr);
-            // Corrected variable name from err to assetErr
-            setError(`Failed to fetch asset balances: ${assetErr instanceof Error ? assetErr.message : String(assetErr)}`);
+                    // Access metadata fields with proper type casting
+                    const metadataObj = metadataCodec.toJSON() as Record<string, any>;
+
+                    if (metadataObj && metadataObj.symbol) {
+                      // Handle symbol as hex-encoded string
+                      const symbolHex = metadataObj.symbol.slice(2); // Remove '0x' prefix if present
+                      const bytes = new Uint8Array(symbolHex.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || []);
+                      symbol = u8aToString(bytes);
+                    }
+
+                    if (metadataObj && metadataObj.decimals !== undefined) {
+                      decimals = Number(metadataObj.decimals);
+                    }
+
+                    if (metadataObj && metadataObj.name) {
+                      // Handle name as hex-encoded string 
+                      const nameHex = metadataObj.name.slice(2); // Remove '0x' prefix if present
+                      const bytes = new Uint8Array(nameHex.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || []);
+                      assetName = u8aToString(bytes);
+                    }
+
+                    console.log(`Asset metadata: ${assetName} (${symbol}) with ${decimals} decimals`);
+
+                    // Skip if this is a duplicate of a native token we already have
+                    if (symbol === 'WND' && fetchedAccounts.some(acc => acc.symbol === 'WND')) {
+                      console.log(`Skipping asset ${symbol} as native balance was already fetched.`);
+                      return null;
+                    }
+                    const assetBalancePromises = assetEntries.map(async ([key, optionalAssetDetails]) => {
+                      if (optionalAssetDetails.isNone) return null;
+                      const assetId = key.args[0];
+                      const optionalAccountData = await api.query.assets.account<Option<AssetAccount>, [AssetId, AccountId]>(assetId, userQRAddress);
+
+                      if (optionalAccountData.isNone) return null;
+                      const accountData = optionalAccountData.unwrap();
+                      if (accountData.balance.isZero() || accountData.isFrozen.isTrue) return null;
+
+                      const optionalMetadata = await api.query.assets.metadata<Option<AssetMetadata>, [AssetId]>(assetId);
+                      if (optionalMetadata.isNone) return null;
+                      const metadata = optionalMetadata.unwrap();
+
+                      const symbol = u8aToString(metadata.symbol);
+                      const decimals = metadata.decimals.toNumber();
+                      const name = u8aToString(metadata.name);
+
+                      // Avoid adding the native token if it somehow appears as an asset
+                      if (symbol === 'WND' && fetchedAccounts.some(acc => acc.symbol === 'WND')) {
+                        console.log(`Skipping asset ${symbol} as native balance was already fetched.`);
+                        return null;
+                      }
+
+                      // Create and return the asset info
+                      return {
+                        id: `${currentApi.runtimeChain}-${assetId.toString()}`,
+                        title: assetName,
+                        description: `${symbol} (${currentApi.runtimeChain})`,
+                        balance: formatBalance(balance, { withSi: false, forceUnit: symbol, decimals: decimals }),
+                        type: 'altcoin',
+                        symbol: symbol,
+                        price: 'N/A', // Placeholder
+                        change: 'N/A', // Placeholder
+                        changeType: 'up', // Placeholder
+                        decimals: decimals,
+                        assetId: assetId.toString(), // Store assetId
+                      } as AccountItem;
+
+                    } catch (metadataErr) {
+                      console.warn(`Error extracting metadata for asset ${assetId.toString()}:`, metadataErr);
+                      return null;
+                    }
+                  } catch (accountErr) {
+                    console.warn(`Error processing account data for asset ${assetId.toString()}:`, accountErr);
+                    return null;
+                  }
+                });
+
+              const fetchedAssetAccounts = (await Promise.all(assetBalancePromises)).filter(Boolean) as AccountItem[];
+              console.log(`Fetched Asset Accounts (${currentApi.runtimeChain}):`, fetchedAssetAccounts);
+              fetchedAccounts.push(...fetchedAssetAccounts);
+
+            } catch (assetErr: unknown) {
+              console.error(`Failed to fetch asset balances from ${currentApi.runtimeChain}:`, assetErr);
+              // Corrected variable name from err to assetErr
+              setError(`Failed to fetch asset balances: ${assetErr instanceof Error ? assetErr.message : String(assetErr)}`);
+            }
           }
+
+          setUserAccounts(fetchedAccounts);
+          // Calculate total balance based on fetched accounts (example: sum WND if available)
+          const wndBalance = fetchedAccounts.find(acc => acc.symbol === 'WND');
+          const wndValue = wndBalance ? parseFloat(wndBalance.balance.split(' ')[0].replace(/,/g, '')) : 0;
+          setTotalBalanceValue(wndValue * 1621.15); // Update placeholder total based on WND
+          console.log("Final accounts list being set:", fetchedAccounts);
+
+        } catch (err: unknown) {
+          console.error("Overall balance fetching failed:", err);
+          setError(`Failed to fetch balances: ${err instanceof Error ? err.message : String(err)}`);
+        } finally {
+          setIsLoading(false);
+          console.log("Balance fetching finished.");
         }
+      }; // End of fetchBalances
 
-        setUserAccounts(fetchedAccounts);
-        // Calculate total balance based on fetched accounts (example: sum WND if available)
-        const wndBalance = fetchedAccounts.find(acc => acc.symbol === 'WND');
-        const wndValue = wndBalance ? parseFloat(wndBalance.balance.split(' ')[0].replace(/,/g, '')) : 0;
-        setTotalBalanceValue(wndValue * 1621.15); // Update placeholder total based on WND
-        console.log("Final accounts list being set:", fetchedAccounts);
-
-      } catch (err: unknown) {
-        console.error("Overall balance fetching failed:", err);
-        setError(`Failed to fetch balances: ${err instanceof Error ? err.message : String(err)}`);
-      } finally {
+      // ... (useEffect call logic remains the same) ...
+      if (api?.isReady && userAddress) {
+        const timer = setTimeout(() => {
+          fetchBalances();
+        }, 100); // Small delay
+        return () => clearTimeout(timer);
+      } else if (!userAddress) {
         setIsLoading(false);
-        console.log("Balance fetching finished.");
       }
-    }; // End of fetchBalances
 
-    // ... (useEffect call logic remains the same) ...
-    if (api?.isReady && userAddress) {
-      const timer = setTimeout(() => {
-        fetchBalances();
-      }, 100); // Small delay
-      return () => clearTimeout(timer);
-    } else if (!userAddress) {
-      setIsLoading(false);
+    }, [api, userAddress]);
+
+
+    // Format total balance for display
+    const formattedTotalBalance = isLoading ? "Loading..." : `$${totalBalanceValue.toFixed(2)}`; // Simplified formatting
+
+
+    // ... (rest of the return statement)
+
+
+    if (!userAddress) {
+      return <div className={cn("p-4 text-center text-red-500", className)}>User address not found. Please create or import an account.</div>;
     }
 
-  }, [api, userAddress]);
+    if (isLoading) {
+      return <div className={cn("p-4 text-center", className)}>Loading assets...</div>;
+    }
 
-  // ... (loading/error/address checks remain the same) ...
+    if (error) {
+      return <div className={cn("p-4 text-center text-red-500", className)}>Error: {error}</div>;
+    }
 
-  // Format total balance for display
-  const formattedTotalBalance = isLoading ? "Loading..." : `$${totalBalanceValue.toFixed(2)}`; // Simplified formatting
-
-  if (!userAddress) {
-    return <div className={cn("p-4 text-center text-red-500", className)}>User address not found. Please create or import an account.</div>;
-  }
-
-  if (isLoading) {
-    return <div className={cn("p-4 text-center", className)}>Loading assets...</div>;
-  }
-
-  if (error) {
-    return <div className={cn("p-4 text-center text-red-500", className)}>Error: {error}</div>;
-  }
-
-  return (
-    <div
-      className={cn(
-        "w-full max-w-xl mx-auto",
-        "bg-white dark:bg-zinc-900/70",
-        "border border-zinc-100 dark:border-zinc-800",
-        "rounded-xl shadow-sm backdrop-blur-xl",
-        className,
-      )}
-    >
-      {/* Total Balance Section */}
-      <div className="p-4 border-b border-zinc-100 dark:border-zinc-800">
-        <p className="text-xs text-zinc-600 dark:text-zinc-400">Portfolio Value</p>
-        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{formattedTotalBalance}</h1>
-      </div>
-
-      {/* Accounts List */}
-      <div className="p-3">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xs font-medium text-zinc-900 dark:text-zinc-100">Your Assets</h2>
+    return (
+      <div
+        className={cn(
+          "w-full max-w-xl mx-auto",
+          "bg-white dark:bg-zinc-900/70",
+          "border border-zinc-100 dark:border-zinc-800",
+          "rounded-xl shadow-sm backdrop-blur-xl",
+          className,
+        )}
+      >
+        {/* Total Balance Section */}
+        <div className="p-4 border-b border-zinc-100 dark:border-zinc-800">
+          <p className="text-xs text-zinc-600 dark:text-zinc-400">Portfolio Value</p>
+          <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{formattedTotalBalance}</h1>
         </div>
 
-        <div className="space-y-1">
-          {userAccounts.length > 0 ? (
-            userAccounts.map((account) => (
-              <div key={account.id} className="w-full">
-                <Dialog>
-                  <DialogTrigger className="w-full">
-                    <div
-                      className={cn(
-                        "group flex items-center justify-between w-full",
-                        "p-2 rounded-lg",
-                        "hover:bg-zinc-100 dark:hover:bg-zinc-800/50",
-                        "transition-all duration-200",
-                        "cursor-pointer",
-                      )}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div
-                          // Refined icon logic based on type/symbol
-                          className={cn("p-1.5 rounded-lg", {
-                            "bg-gray-100 dark:bg-gray-900/30": account.type === 'native',
-                            "bg-orange-100 dark:bg-orange-900/30": account.symbol === 'BTC', // Keep examples
-                            "bg-blue-100 dark:bg-blue-900/30": account.symbol === 'ETH',
-                            "bg-purple-100 dark:bg-purple-900/30": account.type === "altcoin",
-                            "bg-green-100 dark:bg-green-900/30": account.type === "stablecoin",
-                          })}
-                        >
-                          {/* Refined icon rendering */}
-                          {account.type === 'native' && <Wallet className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />}
-                          {account.symbol === 'BTC' && <Bitcoin className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400" />}
-                          {account.symbol === 'ETH' && <QrCode className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />}
-                          {account.type === 'altcoin' && account.symbol !== 'BTC' && account.symbol !== 'ETH' && <ArrowUpRight className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />}
-                          {account.type === 'stablecoin' && <CreditCard className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />}
-                        </div>
-                        <div>
-                          <h3 className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{account.title}</h3>
-                          {account.description && (
-                            <p className="text-[11px] text-zinc-600 dark:text-zinc-400">{account.description}</p>
-                          )}
-                        </div>
-                      </div>
+        {/* Accounts List */}
+        <div className="p-3">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-xs font-medium text-zinc-900 dark:text-zinc-100">Your Assets</h2>
+          </div>
 
-                      <div className="text-right">
-                        {/* Display formatted balance */}
-                        <span className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{account.balance}</span>
+          <div className="space-y-1">
+            {userAccounts.length > 0 ? (
+              userAccounts.map((account) => (
+                <div key={account.id} className="w-full">
+                  <Dialog>
+                    <DialogTrigger className="w-full">
+                      <div
+                        className={cn(
+                          "group flex items-center justify-between w-full",
+                          "p-2 rounded-lg",
+                          "hover:bg-zinc-100 dark:hover:bg-zinc-800/50",
+                          "transition-all duration-200",
+                          "cursor-pointer",
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div
+                            // Refined icon logic based on type/symbol
+                            className={cn("p-1.5 rounded-lg", {
+                              "bg-gray-100 dark:bg-gray-900/30": account.type === 'native',
+                              "bg-orange-100 dark:bg-orange-900/30": account.symbol === 'BTC', // Keep examples
+                              "bg-blue-100 dark:bg-blue-900/30": account.symbol === 'ETH',
+                              "bg-purple-100 dark:bg-purple-900/30": account.type === "altcoin",
+                              "bg-green-100 dark:bg-green-900/30": account.type === "stablecoin",
+                            })}
+                          >
+                            {/* Refined icon rendering */}
+                            {account.type === 'native' && <Wallet className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />}
+                            {account.symbol === 'BTC' && <Bitcoin className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400" />}
+                            {account.symbol === 'ETH' && <QrCode className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />}
+                            {account.type === 'altcoin' && account.symbol !== 'BTC' && account.symbol !== 'ETH' && <ArrowUpRight className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />}
+                            {account.type === 'stablecoin' && <CreditCard className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />}
+                          </div>
+                          <div>
+                            <h3 className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{account.title}</h3>
+                            {account.description && (
+                              <p className="text-[11px] text-zinc-600 dark:text-zinc-400">{account.description}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          {/* Display formatted balance */}
+                          <span className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{account.balance}</span>
+                        </div>
                       </div>
-                    </div>
-                  </DialogTrigger>
-                  {/* Pass the fetched account data to the dialog */}
-                  <CryptoActionDialog crypto={account} api={api} userAddress={userAddress} />
-                </Dialog>
-              </div>
-            ))
-          ) : (
-            <p className="text-center text-zinc-500 dark:text-zinc-400 py-4">No assets found or still loading.</p>
-          )}
+                    </DialogTrigger>
+                    {/* Pass the fetched account data to the dialog */}
+                    <CryptoActionDialog crypto={account} api={api} userAddress={userAddress} />
+                  </Dialog>
+                </div>
+              ))
+            ) : (
+              <p className="text-center text-zinc-500 dark:text-zinc-400 py-4">No assets found or still loading.</p>
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Footer with four buttons - Corrected JSX structure */}
-      <div className="p-2 border-t border-zinc-100 dark:border-zinc-800">
-        <div className="grid grid-cols-4 gap-2">
-          {/* Button 1: Buy */}
-          <button
-            type="button"
-            className={cn(
-              "flex items-center justify-center gap-2",
-              "py-2 px-3 rounded-lg",
-              "text-xs font-medium",
-              "bg-zinc-900 dark:bg-zinc-50",
-              "text-zinc-50 dark:text-zinc-900",
-              "hover:bg-zinc-800 dark:hover:bg-zinc-200",
-              "shadow-sm hover:shadow",
-              "transition-all duration-200",
-            )}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Buy</span>
-          </button>
-          {/* Button 2: Send */}
-          <button
-            type="button"
-            className={cn(
-              "flex items-center justify-center gap-2",
-              "py-2 px-3 rounded-lg",
-              "text-xs font-medium",
-              "bg-zinc-900 dark:bg-zinc-50",
-              "text-zinc-50 dark:text-zinc-900",
-              "hover:bg-zinc-800 dark:hover:bg-zinc-200",
-              "shadow-sm hover:shadow",
-              "transition-all duration-200",
-            )}
-          >
-            <SendHorizontal className="w-3.5 h-3.5" />
-            <span>Send</span>
-          </button>
-          {/* Button 3: Receive */}
-          <button
-            type="button"
-            className={cn(
-              "flex items-center justify-center gap-2",
-              "py-2 px-3 rounded-lg",
-              "text-xs font-medium",
-              "bg-zinc-900 dark:bg-zinc-50",
-              "text-zinc-50 dark:text-zinc-900",
-              "hover:bg-zinc-800 dark:hover:bg-zinc-200",
-              "shadow-sm hover:shadow",
-              "transition-all duration-200",
-            )}
-          >
-            <ArrowDownLeft className="w-3.5 h-3.5" />
-            <span>Receive</span>
-          </button>
-          {/* Button 4: Swap */}
-          <button
-            type="button"
-            className={cn(
-              "flex items-center justify-center gap-2",
-              "py-2 px-3 rounded-lg",
-              "text-xs font-medium",
-              "bg-zinc-900 dark:bg-zinc-50",
-              "text-zinc-50 dark:text-zinc-900",
-              "hover:bg-zinc-800 dark:hover:bg-zinc-200",
-              "shadow-sm hover:shadow",
-              "transition-all duration-200",
-            )}
-          >
-            <ArrowRight className="w-3.5 h-3.5" />
-            <span>Swap</span>
-          </button>
-        </div> {/* Closing grid div */}
-      </div> {/* Closing footer div */}
-    </div> // Closing main component div
-  )
-}
+        {/* Footer with four buttons - Corrected JSX structure */}
+        <div className="p-2 border-t border-zinc-100 dark:border-zinc-800">
+          <div className="grid grid-cols-4 gap-2">
+            {/* Button 1: Buy */}
+            <button
+              type="button"
+              className={cn(
+                "flex items-center justify-center gap-2",
+                "py-2 px-3 rounded-lg",
+                "text-xs font-medium",
+                "bg-zinc-900 dark:bg-zinc-50",
+                "text-zinc-50 dark:text-zinc-900",
+                "hover:bg-zinc-800 dark:hover:bg-zinc-200",
+                "shadow-sm hover:shadow",
+                "transition-all duration-200",
+              )}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Buy</span>
+            </button>
+            {/* Button 2: Send */}
+            <button
+              type="button"
+              className={cn(
+                "flex items-center justify-center gap-2",
+                "py-2 px-3 rounded-lg",
+                "text-xs font-medium",
+                "bg-zinc-900 dark:bg-zinc-50",
+                "text-zinc-50 dark:text-zinc-900",
+                "hover:bg-zinc-800 dark:hover:bg-zinc-200",
+                "shadow-sm hover:shadow",
+                "transition-all duration-200",
+              )}
+            >
+              <SendHorizontal className="w-3.5 h-3.5" />
+              <span>Send</span>
+            </button>
+            {/* Button 3: Receive */}
+            <button
+              type="button"
+              className={cn(
+                "flex items-center justify-center gap-2",
+                "py-2 px-3 rounded-lg",
+                "text-xs font-medium",
+                "bg-zinc-900 dark:bg-zinc-50",
+                "text-zinc-50 dark:text-zinc-900",
+                "hover:bg-zinc-800 dark:hover:bg-zinc-200",
+                "shadow-sm hover:shadow",
+                "transition-all duration-200",
+              )}
+            >
+              <ArrowDownLeft className="w-3.5 h-3.5" />
+              <span>Receive</span>
+            </button>
+            {/* Button 4: Swap */}
+            <button
+              type="button"
+              className={cn(
+                "flex items-center justify-center gap-2",
+                "py-2 px-3 rounded-lg",
+                "text-xs font-medium",
+                "bg-zinc-900 dark:bg-zinc-50",
+                "text-zinc-50 dark:text-zinc-900",
+                "hover:bg-zinc-800 dark:hover:bg-zinc-200",
+                "shadow-sm hover:shadow",
+                "transition-all duration-200",
+              )}
+            >
+              <ArrowRight className="w-3.5 h-3.5" />
+              <span>Swap</span>
+            </button>
+          </div> {/* Closing grid div */}
+        </div> {/* Closing footer div */}
+      </div> // Closing main component div
+    )
+  }
