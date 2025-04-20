@@ -71,7 +71,10 @@ Together, these pieces deliver a truly end‑to‑end "crypto wallet + AI‑powe
 - [ ] Enhance AI model with reinforcement learning from user feedback
 - [ ] Implement automated rebalancing suggestions
 
+### Demo
 
+Check out our video walkthrough:
+[![Omni AI Demo](https://cdn.loom.com/sessions/thumbnails/331aaac6fbea4b37b70c2bd4caffa899-with-play.gif)](https://www.loom.com/share/331aaac6fbea4b37b70c2bd4caffa899)
 ### Getting Started
 
 First, run the development server:

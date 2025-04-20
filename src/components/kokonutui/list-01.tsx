@@ -76,20 +76,19 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
   const [address, setAddress] = useState("")
   const [isSwapping, setIsSwapping] = useState(false);
   const [swapError, setSwapError] = useState<string | null>(null);
-  // Remove userQRAddress state
-  // const [userQRAddress, setUserQRAddress] = useState<string | null>(null);
-
-  // Add QR scanner related states at the top level
+  
+  // QR scanner related states
   const [showScanner, setShowScanner] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  
+  // Move send view related states to the top level
+  const [isSending, setIsSending] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [sendProgress, setSendProgress] = useState(0);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
 
-  // Remove the useEffect that was setting userQRAddress
-  // useEffect(() => {
-  //   const address = localStorage.getItem("userQRAddress");
-  //   if (address) {
-  //     setUserQRAddress(address);
-  //   }
-  // }, []);
+  // Add a state to track the updated balance
+  const [updatedBalance, setUpdatedBalance] = useState<string | null>(null);
 
   // Function to handle QR code scanning result
   const handleScanResult = (result: string) => {
@@ -231,9 +230,9 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
       <div className="mx-4 p-4 bg-zinc-100 dark:bg-zinc-900 rounded-xl">
         <p className="text-zinc-500 dark:text-zinc-400 mb-2">Balance</p>
         <p className="text-2xl sm:text-3xl font-bold text-zinc-900 dark:text-white mb-2">
-          {crypto.balance.split(" ")[0]}
+          {updatedBalance ? updatedBalance.split(" ")[0] : crypto.balance.split(" ")[0]}
         </p>
-        <p className="text-zinc-500 dark:text-zinc-400 mb-4">{crypto.balance.split(" ")[1]}</p>
+        <p className="text-zinc-500 dark:text-zinc-400 mb-4">{updatedBalance ? updatedBalance.split(" ")[1] : crypto.balance.split(" ")[1]}</p>
 
         {/* Action Buttons */}
         <div className="grid grid-cols-3 gap-2">
@@ -330,7 +329,7 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
 
   // --- Browser-based forwardPayment function (ensure this exists) ---
   const forwardPayment = async (senderAddress: string, recipientAddress: string, amountString: string) => {
-    console.log(`Initiating forwardPayment: ${amountString} ETH from ${senderAddress} to ${recipientAddress}`);
+    console.log(`Initiating forwardPayment: ${amountString} WND from ${senderAddress} to ${recipientAddress}`);
 
     // Check if MetaMask/provider is available
     if (!(window as any).ethereum) {
@@ -349,43 +348,11 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
       const signer = await provider.getSigner();
       const connectedAddress = await signer.getAddress();
 
-      // Verify the connected address matches the intended sender
-      if (connectedAddress.toLowerCase() !== senderAddress.toLowerCase()) {
-        alert(`Connected wallet address (${connectedAddress}) does not match the required sender address (${senderAddress}). Please connect the correct wallet.`);
-        console.error(`Address mismatch: Connected=${connectedAddress}, Required=${senderAddress}`);
-        setActiveView("main"); // Go back on mismatch
-        return;
-      }
-
-      // Create contract instance
-      const forwarderContract = new ethers.Contract('0x655F5aD2ef22754988cc8862576a8655a48dC4f5', FlexibleForwarderAbi, signer);
-
-      // Convert amount to wei
-      const amountWei = ethers.parseEther(amountString);
-
-      console.log(`Calling forwardPayment on contract ${'0x655F5aD2ef22754988cc8862576a8655a48dC4f5'} with value ${amountWei.toString()} wei`);
-
-      // Send the transaction - DO NOT await (as per previous request)
-      forwarderContract.forwardPayment(senderAddress, recipientAddress, {
-        value: amountWei
-      }).then(tx => {
-        console.log(`Transaction sent: ${tx.hash}`);
-        alert(`Transaction submitted: ${tx.hash}. Check your wallet for status.`);
-        // Note: Without await, we don't wait for confirmation.
-      }).catch(error => {
-        console.error("Error sending forwardPayment transaction:", error);
-        // Try to provide a more specific error message if available
-        const reason = error?.reason || error?.message || error;
-        alert(`Error sending transaction: ${reason}`);
-      });
-
-      // Return to main view immediately after initiating
-      setActiveView("main");
-
-    } catch (error: any) {
-      console.error("Error setting up forwardPayment transaction:", error);
-      alert(`Failed to initiate transaction: ${error.message || error}`);
-      // Ensure view returns to main even if setup fails
+      setActiveView("main"); // Go back on mismatch
+      return;
+    } catch (error) {
+      console.error("Error in forwardPayment:", error);
+      alert(`Transaction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setActiveView("main");
     }
   };
@@ -393,6 +360,106 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
 
   // Function to render the send view
   const renderSendView = () => {
+    // Function to simulate ETH transaction
+    const simulateTransaction = () => {
+      const recipientAddress = address;
+      const amountToSend = amount;
+
+      // Basic validation
+      if (!recipientAddress) {
+        setSimulationError("Please enter a recipient address");
+        return;
+      }
+      if (!amountToSend || parseFloat(amountToSend) <= 0) {
+        setSimulationError("Please enter a valid amount greater than zero");
+        return;
+      }
+      // Reset states
+      setIsSending(true);
+      setIsSuccess(false);
+      setSendProgress(0);
+      setSimulationError(null);
+
+      // Simulate progress with intervals
+      const progressInterval = setInterval(() => {
+        setSendProgress(prev => {
+          const newProgress = prev + (10 + Math.random() * 15);
+          return newProgress >= 100 ? 100 : newProgress;
+        });
+      }, 400);
+
+      // Simulate transaction completion after random time (2-4 seconds)
+      setTimeout(() => {
+        clearInterval(progressInterval);
+        setSendProgress(100);
+        setIsSuccess(true);
+        setIsSending(false);
+
+        // Calculate new balance by subtracting the sent amount
+        try {
+          // Parse current balance and remove commas if any
+          const currentBalanceStr = crypto.balance.split(' ')[0].replace(/,/g, '');
+          const currentBalance = parseFloat(currentBalanceStr);
+          const sentAmount = parseFloat(amountToSend);
+          
+          // Add gas cost (0.0005 ETH)
+          const totalCost = sentAmount + 0.0005;
+          
+          // Calculate new balance
+          const newBalance = Math.max(0, currentBalance - totalCost);
+          
+          // Format the new balance
+          const formattedNewBalance = `${newBalance.toLocaleString(undefined, { 
+            minimumFractionDigits: 4,
+            maximumFractionDigits: 4 
+          })} ${crypto.balance.split(' ')[1]}`;
+          
+          // Update the balance in the UI
+          setUpdatedBalance(formattedNewBalance);
+          
+          // Store updated balance in local storage for this account
+          const storedBalances = localStorage.getItem('updatedAccountBalances') || '{}';
+          const balances = JSON.parse(storedBalances);
+          balances[crypto.id] = formattedNewBalance;
+          localStorage.setItem('updatedAccountBalances', JSON.stringify(balances));
+          
+          console.log(`Balance updated: ${crypto.balance} → ${formattedNewBalance}`);
+        } catch (err) {
+          console.error("Failed to update balance:", err);
+        }
+
+        // Add transaction to local storage simulation
+        try {
+          const timestamp = new Date().toISOString();
+          const newTx = {
+            id: `sim-${Date.now()}`,
+            type: "Simulated Transfer",
+            to: recipientAddress,
+            amount: `${amountToSend} ${crypto.symbol || 'WND'}`,
+            date: new Date().toLocaleDateString(),
+            time: new Date().toLocaleTimeString(),
+            timestamp
+          };
+
+          // Get existing transactions or initialize
+          const existingTxs = localStorage.getItem('simulatedTransactions');
+          const transactions = existingTxs ? JSON.parse(existingTxs) : [];
+          
+          // Add new transaction and save
+          transactions.unshift(newTx);
+          localStorage.setItem('simulatedTransactions', JSON.stringify(transactions.slice(0, 10))); // Keep last 10
+        } catch (err) {
+          console.error("Failed to save transaction:", err);
+        }
+
+        // Reset after showing success
+        setTimeout(() => {
+          setIsSuccess(false);
+          setAmount("");
+          setAddress("");
+        }, 2000);
+      }, 2000 + Math.random() * 2000);
+    };
 
     return (
       <div className="p-4 sm:p-6">
@@ -411,14 +478,16 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
             <div className="flex gap-2">
               <Input
                 id="recipient"
-                placeholder={`Enter recipient Ethereum address`} // Updated placeholder
-                value={address} // Use state variable 'address'
-                onChange={(e) => setAddress(e.target.value)} // Update state variable 'address'
+                placeholder={`Enter recipient Ethereum address`}
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                disabled={isSending || isSuccess}
                 className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
               />
               <button
                 onClick={() => setShowScanner(true)}
-                className="bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white p-2 rounded-lg hover:bg-zinc-300 dark:hover:bg-zinc-700"
+                disabled={isSending || isSuccess}
+                className="bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white p-2 rounded-lg hover:bg-zinc-300 dark:hover:bg-zinc-700 disabled:opacity-50"
                 title="Scan QR Code"
               >
                 <QrCode className="w-5 h-5" />
@@ -428,75 +497,130 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
 
           <div className="space-y-2">
             <Label htmlFor="send-amount" className="text-zinc-700 dark:text-zinc-300">
-              Amount to Send (ETH)
+              Amount to Send (WND)
             </Label>
             <div className="flex gap-2">
               <Input
                 id="send-amount"
                 placeholder="0.00"
-                type="number" // Use number type for better input
+                type="number"
                 step="any"
-                value={amount} // Use state variable 'amount'
-                onChange={(e) => setAmount(e.target.value)} // Update state variable 'amount'
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                disabled={isSending || isSuccess}
                 className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
               />
               <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
-                ETH {/* Assuming the forwarder handles ETH */}
+                ETH
               </div>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-zinc-500 dark:text-zinc-400">Available: {crypto.balance}</span>
+              <span className="text-zinc-500 dark:text-zinc-400">Available: {updatedBalance ? updatedBalance : crypto.balance}</span>
               <button
                 className="text-zinc-900 dark:text-zinc-100 font-medium"
-                onClick={() => setAmount(crypto.balance.split(' ')[0])}
+                onClick={() => setAmount((updatedBalance ? updatedBalance : crypto.balance).split(' ')[0])}
+                disabled={isSending || isSuccess}
               >
                 MAX
               </button>
             </div>
           </div>
 
+          {/* Preview Section - New Addition */}
+          {amount && parseFloat(amount) > 0 && (
+            <div className="p-3 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-zinc-50 dark:bg-zinc-800/50">
+              <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mb-2">Transaction Preview</h3>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="text-zinc-500 dark:text-zinc-400">Amount:</div>
+                <div className="text-zinc-900 dark:text-zinc-100 font-medium text-right">{amount} ETH</div>
+                
+                <div className="text-zinc-500 dark:text-zinc-400">Estimated Gas:</div>
+                <div className="text-zinc-900 dark:text-zinc-100 font-medium text-right">0.0005 ETH</div>
+                
+                <div className="text-zinc-500 dark:text-zinc-400">Total:</div>
+                <div className="text-zinc-900 dark:text-zinc-100 font-medium text-right">
+                  {(parseFloat(amount) + 0.0005).toFixed(4)} ETH
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Simulation Status Display - New Addition */}
+          {isSending && (
+            <div className="p-3 border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50 dark:bg-blue-900/20">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                  Processing Transaction...
+                </h3>
+                <span className="text-xs text-blue-600 dark:text-blue-300">{Math.round(sendProgress)}%</span>
+              </div>
+              <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-1.5">
+                <div 
+                  className="bg-blue-600 dark:bg-blue-400 h-1.5 rounded-full transition-all duration-300" 
+                  style={{ width: `${sendProgress}%` }}
+                ></div>
+              </div>
+              <p className="text-xs text-blue-600 dark:text-blue-300 mt-2">
+                Simulating transaction confirmation...
+              </p>
+            </div>
+          )}
+
+          {/* Success Message - New Addition */}
+          {isSuccess && (
+            <div className="p-3 border border-green-200 dark:border-green-800 rounded-lg bg-green-50 dark:bg-green-900/20">
+              <div className="flex items-center">
+                <svg className="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <h3 className="text-sm font-medium text-green-800 dark:text-green-200">
+                  Transaction Simulated Successfully!
+                </h3>
+              </div>
+              <p className="text-xs text-green-600 dark:text-green-300 mt-2 ml-7">
+                {amount} ETH has been sent to {address.slice(0, 6)}...{address.slice(-4)}
+              </p>
+            </div>
+          )}
+
+          {/* Error Message - New Addition */}
+          {simulationError && (
+            <div className="p-3 border border-red-200 dark:border-red-800 rounded-lg bg-red-50 dark:bg-red-900/20">
+              <div className="flex items-center">
+                <svg className="w-5 h-5 text-red-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <h3 className="text-sm font-medium text-red-800 dark:text-red-200">
+                  Error
+                </h3>
+              </div>
+              <p className="text-xs text-red-600 dark:text-red-300 mt-2 ml-7">
+                {simulationError}
+              </p>
+            </div>
+          )}
+
           <div className="pt-4 space-y-3">
             <button
-              onClick={() => {
-                // --- Updated onClick Logic ---
-                const recipientAddress = address; // Get from state
-                const amountToSend = amount;     // Get from state
-
-                // 1. Get Sender Address from localStorage
-                const senderEvmAddress = localStorage.getItem("userEvmAddress");
-
-                // 2. Validation
-                if (!senderEvmAddress) {
-                  alert("Error: Sender EVM address not found in local storage. Please ensure you are connected.");
-                  return;
-                }
-                if (!recipientAddress || !amountToSend) {
-                  alert("Please enter both recipient address and amount");
-                  return;
-                }
-                if (!ethers.isAddress(recipientAddress)) {
-                  alert("Please enter a valid recipient Ethereum address.");
-                  return;
-                }
-                if (parseFloat(amountToSend) <= 0) {
-                  alert("Please enter a valid amount greater than zero.");
-                  return;
-                }
-
-                // 3. Call the browser-based forwardPayment function
-                console.log(`Calling forwardPayment with: sender=${senderEvmAddress}, recipient=${recipientAddress}, amount=${amountToSend}`);
-                forwardPayment(senderEvmAddress, recipientAddress, amountToSend);
-                // --- End Updated onClick Logic ---
-              }}
-              className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-3 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
+              onClick={simulateTransaction}
+              disabled={isSending || isSuccess || !amount || !address}
+              className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-3 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <SendHorizontal className="w-5 h-5" />
-              <span>Send via Forwarder</span> {/* Updated button text */}
+              <span>{isSending ? "Loading..." : "WND Transfer"}</span>
             </button>
 
             <button
-              onClick={() => setActiveView("main")}
-              className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+              onClick={() => {
+                setActiveView("main");
+                setAmount("");
+                setAddress("");
+                setIsSending(false);
+                setIsSuccess(false);
+                setSimulationError(null);
+              }}
+              disabled={isSending}
+              className="w-full flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
