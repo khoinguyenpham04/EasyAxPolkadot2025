@@ -897,14 +897,92 @@ export default function AITradingForm() {
                   <>
                     {/* Strategy Overview Tabs */}
                     <Tabs defaultValue="allocation" className="w-full">
-                      <TabsList className="grid w-full grid-cols-3">
-                        <TabsTrigger value="allocation">Allocation</TabsTrigger>
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="allocation">Allocation & Metrics</TabsTrigger>
                         <TabsTrigger value="simulation">Simulation</TabsTrigger>
-                        <TabsTrigger value="metrics">Metrics</TabsTrigger>
                       </TabsList>
                       
-                      {/* Allocation View */}
+                      {/* Combined Allocation and Metrics View */}
                       <TabsContent value="allocation" className="mt-4 space-y-4">
+                        {/* Performance Metrics Summary */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                          <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
+                            <div className="flex justify-between items-center mb-1">
+                              <p className="text-xs text-gray-500 dark:text-gray-400">Annual ROI</p>
+                              <TooltipProvider>
+                                <UITooltip>
+                                  <TooltipTrigger>
+                                    <Info className="h-3.5 w-3.5 text-gray-400" />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="text-xs w-56">Expected annual return based on simulation</p>
+                                  </TooltipContent>
+                                </UITooltip>
+                              </TooltipProvider>
+                            </div>
+                            <p className="text-base font-bold text-gray-900 dark:text-gray-200">
+                              {formatPercent(annualReturn)}
+                            </p>
+                          </div>
+                          
+                          <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
+                            <div className="flex justify-between items-center mb-1">
+                              <p className="text-xs text-gray-500 dark:text-gray-400">Sharpe Ratio</p>
+                              <TooltipProvider>
+                                <UITooltip>
+                                  <TooltipTrigger>
+                                    <Info className="h-3.5 w-3.5 text-gray-400" />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="text-xs w-56">Measures risk-adjusted return. Higher is better. Above 1.0 is good.</p>
+                                  </TooltipContent>
+                                </UITooltip>
+                              </TooltipProvider>
+                            </div>
+                            <p className="text-base font-bold text-gray-900 dark:text-gray-200">
+                              {formatNumber(sharpeRatio)}
+                            </p>
+                          </div>
+                          
+                          <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
+                            <div className="flex justify-between items-center mb-1">
+                              <p className="text-xs text-gray-500 dark:text-gray-400">Risk Metric</p>
+                              <TooltipProvider>
+                                <UITooltip>
+                                  <TooltipTrigger>
+                                    <Info className="h-3.5 w-3.5 text-gray-400" />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="text-xs w-56">Volatility as percentage of initial investment. Lower values indicate more stable returns.</p>
+                                  </TooltipContent>
+                                </UITooltip>
+                              </TooltipProvider>
+                            </div>
+                            <p className="text-base font-bold text-gray-900 dark:text-gray-200">
+                              {formatPercent(riskMetric)}
+                            </p>
+                          </div>
+                          
+                          <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
+                            <div className="flex justify-between items-center mb-1">
+                              <p className="text-xs text-gray-500 dark:text-gray-400">Final Value</p>
+                              <TooltipProvider>
+                                <UITooltip>
+                                  <TooltipTrigger>
+                                    <Info className="h-3.5 w-3.5 text-gray-400" />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="text-xs w-56">Expected median value at the end of time horizon</p>
+                                  </TooltipContent>
+                                </UITooltip>
+                              </TooltipProvider>
+                            </div>
+                            <p className="text-base font-bold text-gray-900 dark:text-gray-200">
+                              {formatCurrency(response.simulation_summary.median_final_value)}
+                            </p>
+                          </div>
+                        </div>
+                        
                         <div className="flex flex-col md:flex-row gap-4">
                           {/* Pie Chart */}
                           <div className="w-full md:w-1/2 h-64 flex items-center justify-center">
@@ -967,6 +1045,77 @@ export default function AITradingForm() {
                                   style={{ width: `${(1 - userProfile.max_exposure) * 100}%` }}
                                 ></div>
                               </div>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Statistical Summary */}
+                        <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 space-y-3">
+                          <h4 className="text-sm font-medium text-gray-900 dark:text-gray-200">Statistical Summary</h4>
+                          
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-500 dark:text-gray-400">Mean Value:</span>
+                              <span className="font-medium text-gray-900 dark:text-gray-200">
+                                {formatCurrency(response.simulation_summary.mean_final_value)}
+                              </span>
+                            </div>
+                            
+                            <div className="flex justify-between">
+                              <span className="text-gray-500 dark:text-gray-400">Profit Probability:</span>
+                              <span className="font-medium text-gray-900 dark:text-gray-200">
+                                {response.simulation_summary.percentile_5th > userProfile.fund ? '95%+' : 
+                                  response.simulation_summary.percentile_5th * 1.2 > userProfile.fund ? '~85%' : '~70%'}
+                              </span>
+                            </div>
+                            
+                            <div className="flex justify-between">
+                              <span className="text-gray-500 dark:text-gray-400">5th Percentile:</span>
+                              <span className="font-medium text-gray-900 dark:text-gray-200">
+                                {formatCurrency(response.simulation_summary.percentile_5th)}
+                              </span>
+                            </div>
+                            
+                            <div className="flex justify-between">
+                              <span className="text-gray-500 dark:text-gray-400">95th Percentile:</span>
+                              <span className="font-medium text-gray-900 dark:text-gray-200">
+                                {formatCurrency(response.simulation_summary.percentile_95th)}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {/* Results Range Visualization */}
+                          <div className="space-y-1 pt-2">
+                            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                              <span>Worst Case (5%)</span>
+                              <span>Best Case (95%)</span>
+                            </div>
+                            <div className="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full">
+                              <div 
+                                className="absolute h-2 bg-gradient-to-r from-amber-500 via-blue-500 to-green-500 rounded-full"
+                                style={{ 
+                                  left: `${((response.simulation_summary.percentile_5th - userProfile.fund * 0.8) / (userProfile.fund * 1.5)) * 100}%`,
+                                  width: `${((response.simulation_summary.percentile_95th - response.simulation_summary.percentile_5th) / (userProfile.fund * 1.5)) * 100}%`
+                                }}
+                              ></div>
+                              <div 
+                                className="absolute w-2 h-4 -mt-1 bg-blue-600 rounded-full"
+                                style={{ 
+                                  left: `${((response.simulation_summary.median_final_value - userProfile.fund * 0.8) / (userProfile.fund * 1.5)) * 100}%`,
+                                  transform: "translateX(-50%)"
+                                }}
+                              ></div>
+                            </div>
+                            <div className="flex justify-between text-xs font-medium pt-1">
+                              <span className="text-amber-600 dark:text-amber-400">
+                                {formatCurrency(response.simulation_summary.percentile_5th)}
+                              </span>
+                              <span className="text-blue-600 dark:text-blue-400">
+                                {formatCurrency(response.simulation_summary.median_final_value)}
+                              </span>
+                              <span className="text-green-600 dark:text-green-400">
+                                {formatCurrency(response.simulation_summary.percentile_95th)}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -1104,162 +1253,6 @@ export default function AITradingForm() {
                             </p>
                             <div className="mt-1 text-xs font-medium text-gray-500 dark:text-gray-400">
                               {userProfile.time_horizon} months projection
-                            </div>
-                          </div>
-                        </div>
-                      </TabsContent>
-                      
-                      {/* Metrics View */}
-                      <TabsContent value="metrics" className="mt-4 space-y-4">
-                        {/* Performance Metrics */}
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
-                            <div className="flex justify-between items-center mb-1">
-                              <p className="text-xs text-gray-500 dark:text-gray-400">Sharpe Ratio</p>
-                              <TooltipProvider>
-                                <UITooltip>
-                                  <TooltipTrigger>
-                                    <Info className="h-3.5 w-3.5 text-gray-400" />
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p className="text-xs w-56">Sharpe ratio measures risk-adjusted return. Higher is better. Above 1.0 is good.</p>
-                                  </TooltipContent>
-                                </UITooltip>
-                              </TooltipProvider>
-                            </div>
-                            <p className="text-base font-bold text-gray-900 dark:text-gray-200">
-                              {formatNumber(sharpeRatio)}
-                            </p>
-                            <div className="mt-1 text-xs">
-                              <Badge 
-                                variant="outline" 
-                                className={sharpeRatio > 1 ? 'text-green-600 bg-green-50 dark:bg-green-900/20' : 
-                                  sharpeRatio > 0.5 ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : 
-                                  'text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20'}
-                              >
-                                {sharpeRatio > 1 ? 'Excellent' : sharpeRatio > 0.5 ? 'Good' : 'Moderate'}
-                              </Badge>
-                            </div>
-                          </div>
-                          
-                          <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
-                            <div className="flex justify-between items-center mb-1">
-                              <p className="text-xs text-gray-500 dark:text-gray-400">Risk Metric</p>
-                              <TooltipProvider>
-                                <UITooltip>
-                                  <TooltipTrigger>
-                                    <Info className="h-3.5 w-3.5 text-gray-400" />
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p className="text-xs w-56">Volatility as percentage of initial investment. Lower values indicate more stable returns.</p>
-                                  </TooltipContent>
-                                </UITooltip>
-                              </TooltipProvider>
-                            </div>
-                            <p className="text-base font-bold text-gray-900 dark:text-gray-200">
-                              {formatPercent(riskMetric)}
-                            </p>
-                            <div className="mt-1 text-xs">
-                              <Badge 
-                                variant="outline" 
-                                className={riskMetric < 0.1 ? 'text-green-600 bg-green-50 dark:bg-green-900/20' : 
-                                  riskMetric < 0.2 ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : 
-                                  'text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20'}
-                              >
-                                {riskMetric < 0.1 ? 'Low Risk' : riskMetric < 0.2 ? 'Medium Risk' : 'High Risk'}
-                              </Badge>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {/* Detailed Stats */}
-                        <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 space-y-3">
-                          <h4 className="text-sm font-medium text-gray-900 dark:text-gray-200">Statistical Summary</h4>
-                          
-                          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-gray-500 dark:text-gray-400">Mean Value:</span>
-                              <span className="font-medium text-gray-900 dark:text-gray-200">
-                                {formatCurrency(response.simulation_summary.mean_final_value)}
-                              </span>
-                            </div>
-                            
-                            <div className="flex justify-between">
-                              <span className="text-gray-500 dark:text-gray-400">Median Value:</span>
-                              <span className="font-medium text-gray-900 dark:text-gray-200">
-                                {formatCurrency(response.simulation_summary.median_final_value)}
-                              </span>
-                            </div>
-                            
-                            <div className="flex justify-between">
-                              <span className="text-gray-500 dark:text-gray-400">Standard Deviation:</span>
-                              <span className="font-medium text-gray-900 dark:text-gray-200">
-                                {formatCurrency(response.simulation_summary.std_dev_final_value)}
-                              </span>
-                            </div>
-                            
-                            <div className="flex justify-between">
-                              <span className="text-gray-500 dark:text-gray-400">Profit Probability:</span>
-                              <span className="font-medium text-gray-900 dark:text-gray-200">
-                                {response.simulation_summary.percentile_5th > userProfile.fund ? '95%+' : 
-                                  response.simulation_summary.percentile_5th * 1.2 > userProfile.fund ? '~85%' : '~70%'}
-                              </span>
-                            </div>
-                            
-                            <div className="flex justify-between">
-                              <span className="text-gray-500 dark:text-gray-400">5th Percentile:</span>
-                              <span className="font-medium text-gray-900 dark:text-gray-200">
-                                {formatCurrency(response.simulation_summary.percentile_5th)}
-                              </span>
-                            </div>
-                            
-                            <div className="flex justify-between">
-                              <span className="text-gray-500 dark:text-gray-400">95th Percentile:</span>
-                              <span className="font-medium text-gray-900 dark:text-gray-200">
-                                {formatCurrency(response.simulation_summary.percentile_95th)}
-                              </span>
-                            </div>
-                            
-                            <div className="flex justify-between col-span-2">
-                              <span className="text-gray-500 dark:text-gray-400">Simulations Run:</span>
-                              <span className="font-medium text-gray-900 dark:text-gray-200">
-                                {response.simulation_summary.num_simulations.toLocaleString()}
-                              </span>
-                            </div>
-                          </div>
-                          
-                          {/* Results Range Visualization */}
-                          <div className="space-y-1 pt-2">
-                            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-                              <span>Worst Case (5%)</span>
-                              <span>Best Case (95%)</span>
-                            </div>
-                            <div className="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full">
-                              <div 
-                                className="absolute h-2 bg-gradient-to-r from-amber-500 via-blue-500 to-green-500 rounded-full"
-                                style={{ 
-                                  left: `${((response.simulation_summary.percentile_5th - userProfile.fund * 0.8) / (userProfile.fund * 1.5)) * 100}%`,
-                                  width: `${((response.simulation_summary.percentile_95th - response.simulation_summary.percentile_5th) / (userProfile.fund * 1.5)) * 100}%`
-                                }}
-                              ></div>
-                              <div 
-                                className="absolute w-2 h-4 -mt-1 bg-blue-600 rounded-full"
-                                style={{ 
-                                  left: `${((response.simulation_summary.median_final_value - userProfile.fund * 0.8) / (userProfile.fund * 1.5)) * 100}%`,
-                                  transform: "translateX(-50%)"
-                                }}
-                              ></div>
-                            </div>
-                            <div className="flex justify-between text-xs font-medium pt-1">
-                              <span className="text-amber-600 dark:text-amber-400">
-                                {formatCurrency(response.simulation_summary.percentile_5th)}
-                              </span>
-                              <span className="text-blue-600 dark:text-blue-400">
-                                {formatCurrency(response.simulation_summary.median_final_value)}
-                              </span>
-                              <span className="text-green-600 dark:text-green-400">
-                                {formatCurrency(response.simulation_summary.percentile_95th)}
-                              </span>
                             </div>
                           </div>
                         </div>
