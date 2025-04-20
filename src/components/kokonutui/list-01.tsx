@@ -56,17 +56,17 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
   const [activeView, setActiveView] = useState<"main" | "send" | "receive" | "swap">("main")
   const [amount, setAmount] = useState("")
   const [address, setAddress] = useState("")
-  const [userAddress, setUserAddress] = useState<string | null>(null);
-  
+  const [userQRAddress, setUserQRAddress] = useState<string | null>(null);
+
   // Add QR scanner related states at the top level
   const [showScanner, setShowScanner] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
-  
+
   // Move the useEffect to the component top level
   useEffect(() => {
-    const address = localStorage.getItem("userAddress");
+    const address = localStorage.getItem("userQRAddress");
     if (address) {
-      setUserAddress(address);
+      setUserQRAddress(address);
     }
   }, []);
 
@@ -75,7 +75,7 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
     setAddress(result);
     setShowScanner(false);
   };
-  
+
   // Sample transaction data
   const transactions = [
     {
@@ -115,43 +115,43 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
   // QR Code Scanner component - moved to top level of CryptoActionDialog
   const QRScanner = () => {
     const qrContainerRef = useRef<HTMLDivElement>(null);
-    
+
     useEffect(() => {
       if (!qrContainerRef.current) return;
-      
+
       // Clear any previous content
       qrContainerRef.current.innerHTML = '';
-      
+
       // Create instance with container ID, config and callbacks
       const html5QrcodeScanner = new Html5QrcodeScanner(
-        "qr-reader", 
-        { 
+        "qr-reader",
+        {
           fps: 10,
           qrbox: { width: 250, height: 250 },
           rememberLastUsedCamera: true,
         },
         /* verbose= */ false
       );
-      
+
       // Define success callback
       const onScanSuccess = (decodedText: string) => {
         console.log(`QR Code detected: ${decodedText}`);
         setAddress(decodedText);
-        
+
         // Stop scanning and close scanner
         html5QrcodeScanner.clear();
         setShowScanner(false);
       };
-      
+
       // Handle scan failure - just log it
       const onScanFailure = (error: string) => {
         // We don't need to show errors for every frame
         console.log(`QR scan error: ${error}`);
       };
-      
+
       // Render the scanner UI and start scanning
       html5QrcodeScanner.render(onScanSuccess, onScanFailure);
-      
+
       // Clean up on unmount
       return () => {
         html5QrcodeScanner.clear().catch(error => {
@@ -159,16 +159,16 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
         });
       };
     }, []);
-    
+
     return (
       <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black bg-opacity-80">
         <div className="bg-white dark:bg-zinc-800 p-4 rounded-lg w-full max-w-sm">
           <h3 className="text-lg font-medium mb-2 text-center text-zinc-900 dark:text-white">
             Scan QR Code
           </h3>
-          <div 
-            id="qr-reader" 
-            ref={qrContainerRef} 
+          <div
+            id="qr-reader"
+            ref={qrContainerRef}
             className="qr-container"
           ></div>
           <button
@@ -309,11 +309,11 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
 
   // Function to render the send view
   const renderSendView = () => {
-    
+
     return (
       <div className="p-4 sm:p-6">
         {showScanner && <QRScanner />}
-        
+
         <div className="mb-6">
           <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Send {crypto.title}</h2>
           <p className="text-zinc-500 dark:text-zinc-400">Transfer {crypto.symbol} to another wallet</p>
@@ -379,7 +379,7 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
                   alert(`Transaction initiated: ${amountToSend} ${crypto.symbol} to ${recipientAddress}`);
                   setActiveView("main");
                 };
-                
+
                 if (address && amount) {
                   handleSend(address, amount);
                 } else {
@@ -406,8 +406,8 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
 
   // Function to render the receive view
   const renderReceiveView = () => {
-    const addressToDisplay = userAddress || `${crypto.symbol?.toLowerCase() || 'address'}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`;
-    
+    const addressToDisplay = userQRAddress || `${crypto.symbol?.toLowerCase() || 'address'}1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l`;
+
     return (
       <div className="p-4 sm:p-6">
         <div className="mb-6">
@@ -417,9 +417,9 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
 
         <div className="flex flex-col items-center justify-center mb-6">
           <div className="bg-white p-4 rounded-lg mb-4">
-            {userAddress ? (
-              <img 
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(userAddress)}`}
+            {userQRAddress ? (
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(userQRAddress)}`}
                 alt={`${crypto.title} address QR code`}
                 className="w-40 h-40 sm:w-48 sm:h-48"
               />
@@ -580,7 +580,7 @@ function CryptoActionDialog({ crypto }: { crypto: AccountItem }) {
 
 // Update the main List01 component
 export default function List01({ className }: List01Props) { // Remove accounts and totalBalance from props for now
-  const [userAddress, setUserAddress] = useState<string | null>(null);
+  const [userQRAddress, setUserQRAddress] = useState<string | null>(null);
   const [userAccounts, setUserAccounts] = useState<AccountItem[]>([]);
   const [totalBalanceValue, setTotalBalanceValue] = useState<number>(0); // Store raw total balance
   const [isLoading, setIsLoading] = useState(true);
@@ -589,9 +589,9 @@ export default function List01({ className }: List01Props) { // Remove accounts 
 
   // Effect to get address and connect to API
   useEffect(() => {
-    const address = localStorage.getItem("userAddress");
+    const address = localStorage.getItem("userQRAddress");
     const endpoint = localStorage.getItem("networkEndpoint");
-    setUserAddress(address);
+    setUserQRAddress(address);
     console.log(`Using address: ${address}, endpoint: ${endpoint}`); // Log address and endpoint
 
     let apiInstance: ApiPromise | null = null; // Variable to hold the instance for cleanup
@@ -631,8 +631,8 @@ export default function List01({ className }: List01Props) { // Remove accounts 
   useEffect(() => {
     const fetchBalances = async () => {
       // Ensure API for assets is connected (or connecting) and userAddress exists
-      if (!userAddress) {
-        console.log("UserAddress missing, skipping balance fetch.");
+      if (!userQRAddress) {
+        console.log("UserQRAddress missing, skipping balance fetch.");
         setIsLoading(false); // Set loading false if address is missing
         return;
       }
@@ -640,7 +640,7 @@ export default function List01({ className }: List01Props) { // Remove accounts 
       // Set loading true when starting the fetch
       setIsLoading(true);
       setError(null);
-      console.log(`Fetching balances for address: ${userAddress}`);
+      console.log(`Fetching balances for address: ${userQRAddress}`);
 
       let relayApi: ApiPromise | null = null;
       const westendRelayEndpoint = 'wss://westend-rpc.polkadot.io';
@@ -655,7 +655,7 @@ export default function List01({ className }: List01Props) { // Remove accounts 
           await relayApi.isReady;
           console.log(`Successfully connected to ${relayApi.runtimeChain} for native balance.`);
 
-          const { data: balanceData } = await relayApi.query.system.account<AccountInfo>(userAddress);
+          const { data: balanceData } = await relayApi.query.system.account<AccountInfo>(userQRAddress);
           const nativeTokenInfo = relayApi.registry.chainTokens[0];
           const nativeDecimals = relayApi.registry.chainDecimals[0];
           const nativeSymbol = nativeTokenInfo || 'WND'; // Default to WND if not found
@@ -678,7 +678,7 @@ export default function List01({ className }: List01Props) { // Remove accounts 
             fetchedAccounts.push(nativeAccount);
             console.log("Fetched Native Account (Relay Chain):", nativeAccount);
           } else {
-            console.log(`Native balance is zero on Westend Relay Chain for address ${userAddress}.`);
+            console.log(`Native balance is zero on Westend Relay Chain for address ${userQRAddress}.`);
           }
         } catch (relayErr) {
           console.error("Failed to connect or fetch native balance from Relay Chain:", relayErr);
@@ -701,7 +701,7 @@ export default function List01({ className }: List01Props) { // Remove accounts 
             const assetBalancePromises = assetEntries.map(async ([key, optionalAssetDetails]) => {
               if (optionalAssetDetails.isNone) return null;
               const assetId = key.args[0];
-              const optionalAccountData = await api.query.assets.account<Option<AssetAccount>, [AssetId, AccountId]>(assetId, userAddress);
+              const optionalAccountData = await api.query.assets.account<Option<AssetAccount>, [AssetId, AccountId]>(assetId, userQRAddress);
 
               if (optionalAccountData.isNone) return null;
               const accountData = optionalAccountData.unwrap();
@@ -767,7 +767,7 @@ export default function List01({ className }: List01Props) { // Remove accounts 
 
     return () => clearTimeout(timer); // Clear timeout on cleanup
 
-  }, [api, userAddress]); // Re-run if primary api instance or userAddress changes
+  }, [api, userQRAddress]); // Re-run if primary api instance or userAddress changes
 
   // Format total balance for display (placeholder)
   const formattedTotalBalance = isLoading ? "Loading..." : `${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(totalBalanceValue.toFixed(2)))}`; // Indicate it's a count
@@ -775,7 +775,7 @@ export default function List01({ className }: List01Props) { // Remove accounts 
   // ... (rest of the return statement)
 
 
-  if (!userAddress) {
+  if (!userQRAddress) {
     return <div className={cn("p-4 text-center text-red-500", className)}>User address not found. Please create or import an account.</div>;
   }
 
