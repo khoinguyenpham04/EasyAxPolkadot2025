@@ -15,6 +15,8 @@ import {
   Clock,
   ArrowDown, // Added ArrowDown for swap icon
 } from "lucide-react"
+import { ethers } from 'ethers'; // Import ethers
+import FlexibleForwarderAbi from '../../../scripts/swap.json'; // Adjust path as needed
 
 // Dialog imports
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
@@ -326,6 +328,69 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
     </>
   )
 
+  // --- Browser-based forwardPayment function (ensure this exists) ---
+  const forwardPayment = async (senderAddress: string, recipientAddress: string, amountString: string) => {
+    console.log(`Initiating forwardPayment: ${amountString} ETH from ${senderAddress} to ${recipientAddress}`);
+
+    // Check if MetaMask/provider is available
+    if (!(window as any).ethereum) {
+      alert("MetaMask (or another Ethereum wallet provider) is not installed. Please install it.");
+      console.error("Ethereum provider not found.");
+      setActiveView("main"); // Go back if no provider
+      return;
+    }
+
+    try {
+      // Request account access
+      await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
+
+      // Use ethers with the browser provider
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
+      const signer = await provider.getSigner();
+      const connectedAddress = await signer.getAddress();
+
+      // Verify the connected address matches the intended sender
+      if (connectedAddress.toLowerCase() !== senderAddress.toLowerCase()) {
+        alert(`Connected wallet address (${connectedAddress}) does not match the required sender address (${senderAddress}). Please connect the correct wallet.`);
+        console.error(`Address mismatch: Connected=${connectedAddress}, Required=${senderAddress}`);
+        setActiveView("main"); // Go back on mismatch
+        return;
+      }
+
+      // Create contract instance
+      const forwarderContract = new ethers.Contract('0x655F5aD2ef22754988cc8862576a8655a48dC4f5', FlexibleForwarderAbi, signer);
+
+      // Convert amount to wei
+      const amountWei = ethers.parseEther(amountString);
+
+      console.log(`Calling forwardPayment on contract ${'0x655F5aD2ef22754988cc8862576a8655a48dC4f5'} with value ${amountWei.toString()} wei`);
+
+      // Send the transaction - DO NOT await (as per previous request)
+      forwarderContract.forwardPayment(senderAddress, recipientAddress, {
+        value: amountWei
+      }).then(tx => {
+        console.log(`Transaction sent: ${tx.hash}`);
+        alert(`Transaction submitted: ${tx.hash}. Check your wallet for status.`);
+        // Note: Without await, we don't wait for confirmation.
+      }).catch(error => {
+        console.error("Error sending forwardPayment transaction:", error);
+        // Try to provide a more specific error message if available
+        const reason = error?.reason || error?.message || error;
+        alert(`Error sending transaction: ${reason}`);
+      });
+
+      // Return to main view immediately after initiating
+      setActiveView("main");
+
+    } catch (error: any) {
+      console.error("Error setting up forwardPayment transaction:", error);
+      alert(`Failed to initiate transaction: ${error.message || error}`);
+      // Ensure view returns to main even if setup fails
+      setActiveView("main");
+    }
+  };
+  // --- End forwardPayment function ---
+
   // Function to render the send view
   const renderSendView = () => {
 
@@ -335,7 +400,7 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
 
         <div className="mb-6">
           <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Send {crypto.title}</h2>
-          <p className="text-zinc-500 dark:text-zinc-400">Transfer {crypto.symbol} to another wallet</p>
+          <p className="text-zinc-500 dark:text-zinc-400">Transfer {crypto.symbol} to another wallet via Forwarder</p>
         </div>
 
         <div className="space-y-6">
@@ -346,9 +411,9 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
             <div className="flex gap-2">
               <Input
                 id="recipient"
-                placeholder={`Enter ${crypto.symbol || 'Asset'} address`}
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
+                placeholder={`Enter recipient Ethereum address`} // Updated placeholder
+                value={address} // Use state variable 'address'
+                onChange={(e) => setAddress(e.target.value)} // Update state variable 'address'
                 className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
               />
               <button
@@ -363,18 +428,20 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
 
           <div className="space-y-2">
             <Label htmlFor="send-amount" className="text-zinc-700 dark:text-zinc-300">
-              Amount to Send
+              Amount to Send (ETH)
             </Label>
             <div className="flex gap-2">
               <Input
                 id="send-amount"
                 placeholder="0.00"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                type="number" // Use number type for better input
+                step="any"
+                value={amount} // Use state variable 'amount'
+                onChange={(e) => setAmount(e.target.value)} // Update state variable 'amount'
                 className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
               />
               <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md flex items-center border border-zinc-200 dark:border-zinc-700">
-                {crypto.symbol || 'Tokens'}
+                ETH {/* Assuming the forwarder handles ETH */}
               </div>
             </div>
             <div className="flex justify-between text-xs">
@@ -391,24 +458,40 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
           <div className="pt-4 space-y-3">
             <button
               onClick={() => {
-                // Here you would call your actual send function
-                const handleSend = (recipientAddress: string, amountToSend: string) => {
-                  console.log(`Sending ${amountToSend} ${crypto.symbol} to ${recipientAddress}`);
-                  // Implement actual send functionality here
-                  alert(`Transaction initiated: ${amountToSend} ${crypto.symbol} to ${recipientAddress}`);
-                  setActiveView("main");
-                };
+                // --- Updated onClick Logic ---
+                const recipientAddress = address; // Get from state
+                const amountToSend = amount;     // Get from state
 
-                if (address && amount) {
-                  handleSend(address, amount);
-                } else {
-                  alert("Please enter both recipient address and amount");
+                // 1. Get Sender Address from localStorage
+                const senderEvmAddress = localStorage.getItem("userEvmAddress");
+
+                // 2. Validation
+                if (!senderEvmAddress) {
+                  alert("Error: Sender EVM address not found in local storage. Please ensure you are connected.");
+                  return;
                 }
+                if (!recipientAddress || !amountToSend) {
+                  alert("Please enter both recipient address and amount");
+                  return;
+                }
+                if (!ethers.isAddress(recipientAddress)) {
+                  alert("Please enter a valid recipient Ethereum address.");
+                  return;
+                }
+                if (parseFloat(amountToSend) <= 0) {
+                  alert("Please enter a valid amount greater than zero.");
+                  return;
+                }
+
+                // 3. Call the browser-based forwardPayment function
+                console.log(`Calling forwardPayment with: sender=${senderEvmAddress}, recipient=${recipientAddress}, amount=${amountToSend}`);
+                forwardPayment(senderEvmAddress, recipientAddress, amountToSend);
+                // --- End Updated onClick Logic ---
               }}
               className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-3 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
             >
               <SendHorizontal className="w-5 h-5" />
-              <span>Send {crypto.symbol || 'Asset'}</span>
+              <span>Send via Forwarder</span> {/* Updated button text */}
             </button>
 
             <button
@@ -779,6 +862,7 @@ export default function List01({ className }: List01Props) {
       setIsLoading(true);
       setError(null);
       console.log(`Fetching balances for address: ${userAddress}`);
+      console.log(`fihsahfiahsifaf ${localStorage.getItem("userEvmAddress")}`);
 
       let nativeApi: ApiPromise | null = null;
       const westendAssetHubEndpoint = 'wss://westend-asset-hub-rpc.polkadot.io';
@@ -817,6 +901,8 @@ export default function List01({ className }: List01Props) {
             console.log("Fetched Native Account (Asset Hub):", nativeAccount);
           } else {
             console.log(`Native balance is zero on Westend Asset Hub for address ${userAddress}.`);
+            console.log(`Native balance is zero on Westend Asset Hub for EVM address ${localStorage.getItem("userEvmAddress")}.`);
+
           }
         } catch (nativeErr: unknown) { // Use unknown instead of any
           console.error("Failed to connect or fetch native balance from Asset Hub:", nativeErr);
