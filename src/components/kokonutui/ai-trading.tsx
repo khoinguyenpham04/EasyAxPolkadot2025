@@ -1229,7 +1229,82 @@ export default function AITradingForm() {
                             </TabsContent>
                             
                             <TabsContent value="line" className="mt-0 border-0 p-0">
-                              {/* ...existing line chart... */}
+                              <div className="h-80 sm:h-100">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <RechartsLineChart
+                                    data={generateSimulationChartData(response, userProfile)}
+                                    margin={{
+                                      top: 10,
+                                      right: 10,
+                                      left: 0,
+                                      bottom: 0,
+                                    }}
+                                  >
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                                    <XAxis 
+                                      dataKey="month" 
+                                      label={{ 
+                                        value: 'Months', 
+                                        position: 'insideBottom', 
+                                        offset: -5 
+                                      }} 
+                                      tickFormatter={(value) => value % 6 === 0 ? value : ''}
+                                    />
+                                    <YAxis 
+                                      tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`}
+                                      width={60}
+                                    />
+                                    <Tooltip 
+                                      formatter={(value) => [`$${value.toLocaleString()}`, undefined]}
+                                      labelFormatter={(value) => `Month ${value}`}
+                                    />
+                                    <Legend 
+                                      verticalAlign="top" 
+                                      height={36}
+                                      iconSize={10}
+                                      wrapperStyle={{ paddingBottom: 10 }}
+                                      formatter={(value) => {
+                                        return <span style={{ fontSize: '0.75rem', marginRight: '8px' }}>{value}</span>;
+                                      }}
+                                    />
+                                    <Line 
+                                      type="monotone" 
+                                      dataKey="median" 
+                                      name="Expected Value" 
+                                      stroke="#3b82f6" 
+                                      strokeWidth={2}
+                                      dot={false}
+                                      activeDot={{ r: 6 }}
+                                    />
+                                    <Line 
+                                      type="monotone" 
+                                      dataKey="low" 
+                                      name="Worst Case (5%)" 
+                                      stroke="#f97316" 
+                                      strokeWidth={1.5}
+                                      strokeDasharray="4 4"
+                                      dot={false}
+                                    />
+                                    <Line 
+                                      type="monotone" 
+                                      dataKey="high" 
+                                      name="Best Case (95%)" 
+                                      stroke="#22c55e" 
+                                      strokeWidth={1.5}
+                                      strokeDasharray="4 4"
+                                      dot={false}
+                                    />
+                                    <Line 
+                                      type="monotone" 
+                                      dataKey="initial" 
+                                      name="Initial Investment" 
+                                      stroke="#9ca3af" 
+                                      strokeDasharray="3 3"
+                                      dot={false}
+                                    />
+                                  </RechartsLineChart>
+                                </ResponsiveContainer>
+                              </div>
                             </TabsContent>
                           </Tabs>
                         </div>
