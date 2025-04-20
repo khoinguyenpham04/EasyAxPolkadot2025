@@ -1,252 +1,176 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19; // Use a version compatible with solang for Polkadot
+pragma solidity ^0.8.19;
 
 /**
- * @title IAsset Interface (Placeholder)
- * @dev Represents the basic functions needed to interact with a Polkadot Asset Hub asset.
- * The actual implementation/address depends on the solang setup for pallet-assets.
- * Balances and amounts typically use uint128 on Asset Hub.
- */
-interface IAsset {
-    /**
-     * @dev Moves `amount` tokens from the caller's account to `recipient`.
-     */
-    function transfer(
-        address recipient,
-        uint128 amount
-    ) external returns (bool);
-
-    /**
-     * @dev Moves `amount` tokens from `sender` to `recipient` using the
-     * allowance mechanism. `amount` is then deducted from the caller's
-     * allowance.
-     * Requires prior approval from `sender` to the contract (msg.sender).
-     */
-    function transferFrom(
-        address sender,
-        address recipient,
-        uint128 amount
-    ) external returns (bool);
-
-    /**
-     * @dev Returns the amount of tokens owned by `account`.
-     */
-    function balanceOf(address account) external view returns (uint128);
-
-    /**
-     * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
-     * NOTE: This function is called by the *user* on the *token contract*, not the DEX.
-     */
-    function approve(address spender, uint128 amount) external returns (bool);
-
-    /**
-     * @dev Returns the remaining number of tokens that `spender` will be
-     * allowed to spend on behalf of `owner`.
-     */
-    function allowance(
-        address owner,
-        address spender
-    ) external view returns (uint128);
-}
-
-/**
- * @title SimpleDexMVP
- * @dev A minimal DEX contract for swapping native WND for another token (LSP) and vice-versa at a fixed rate.
- * Designed for Polkadot Asset Hub using Solidity (via solang).
- * Assumes WND is the native chain token and LSP is a pallet-assets token.
- * Uses approve/transferFrom for LSP -> WND swaps.
+ * @title SimpleDexMVP (Revised for Asset Hub Pallet Interaction)
+ * @notice Interacts with pallet-assets using low-level calls.
+ * Requires correct pallet address, function selector, and SCALE encoding.
  */
 contract SimpleDexMVP {
     address public owner;
-    IAsset public immutable otherToken; // Interface to the LSP asset (pallet-assets)
-    uint256 public exchangeRate; // How many 'otherToken' units per 1 WND unit (scaled by RATE_PRECISION)
 
-    // Precision factor for the exchange rate (e.g., 10**18 for ether-like decimals)
-    // If rate is 5.5, store 5500000000000000000 if precision is 10**18
+    // Standard derived address for pallet-assets (from "modl" + "py/asset")
+    // VERIFY this if possible for your specific chain, but it's highly likely correct.
+    address constant PALLET_ASSETS_ADDRESS =
+        0x6d6f646c70792f61737365740000000000000000000000000000000000000000;
+
+    // Function selector index for pallet-assets::transfer
+    // !!! EXAMPLE ONLY - MUST BE FOUND FOR YOUR TARGET CHAIN'S RUNTIME VERSION !!!
+    // Common indices are often low numbers like 0x05, 0x08, etc. Check runtime metadata.
+    bytes1 constant TRANSFER_SELECTOR = 0x08; // <<< Placeholder Example! Find the real one!
+
+    uint32 public immutable otherTokenAssetId; // The Asset ID for the specific token (e.g., LSP)
+    uint256 public exchangeRate;
     uint256 public constant RATE_PRECISION = 10 ** 18;
 
     event Swapped(
         address indexed user,
-        uint128 wndAmountIn, // WND received via msg.value
-        uint128 otherTokenAmountOut // LSP sent
+        uint32 indexed assetIdOut,
+        uint128 wndAmountIn,
+        uint128 otherTokenAmountOut
     );
-    // Add a new event for the reverse swap
     event SwappedOtherForWND(
         address indexed user,
-        uint128 otherTokenAmountIn, // LSP received via transferFrom
-        uint128 wndAmountOut // WND sent
+        uint32 indexed assetIdIn,
+        uint128 otherTokenAmountIn,
+        uint128 wndAmountOut
     );
     event RateUpdated(uint256 newRate);
-    event TokensWithdrawn(address indexed tokenAddressOrNative, uint128 amount);
+    event TokensWithdrawn(
+        address indexed tokenAddressOrNative,
+        uint32 indexed assetId,
+        uint128 amount
+    );
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "SimpleDexMVP: Caller is not the owner");
+        require(msg.sender == owner, "Owner only");
         _;
     }
 
-    /**
-     * @dev Constructor initializes the DEX.
-     * @param _otherTokenAddress The address representing the LSP asset contract/precompile.
-     * @param _initialRate The initial exchange rate (scaled by RATE_PRECISION). E.g., for 1 WND = 10 LSP, pass 10 * (10**18).
-     */
-    constructor(address _otherTokenAddress, uint256 _initialRate) {
+    constructor(uint32 _otherTokenAssetId, uint256 _initialRate) {
         owner = msg.sender;
-        otherToken = IAsset(_otherTokenAddress); // This is the LSP precompile address
-        exchangeRate = _initialRate; // Assume rate is already scaled
+        otherTokenAssetId = _otherTokenAssetId;
+        exchangeRate = _initialRate;
     }
 
     /**
      * @dev Swaps WND sent with the transaction for the other token (LSP).
-     * The amount of WND is determined by msg.value.
+     * Requires correct SCALE encoding for the pallet-assets transfer call.
      */
     function swapWNDForOther() external payable {
-        // Made payable, removed _wndAmount
-        uint128 wndAmountIn = uint128(msg.value); // Use msg.value for WND amount
-        require(wndAmountIn > 0, "SimpleDexMVP: Cannot swap zero WND");
+        uint128 wndAmountIn = uint128(msg.value);
+        require(wndAmountIn > 0, "No WND sent");
 
-        // Calculate the amount of otherToken (LSP) to send out
-        // amountOut = amountIn * rate / precision
         uint128 otherAmountOut = uint128(
             (uint256(wndAmountIn) * exchangeRate) / RATE_PRECISION
         );
-        require(
-            otherAmountOut > 0,
-            "SimpleDexMVP: Output amount would be zero"
+        require(otherAmountOut > 0, "Output is zero");
+
+        // --- Balance Check ---
+        // Reading pallet-assets balance via staticcall from Solidity is very complex.
+        // Reverting for now to indicate it's not implemented.
+        revert("On-chain pallet balance check not implemented");
+
+        // --- Pallet Transfer Call ---
+        address recipient = msg.sender; // EVM address
+        uint128 amount = otherAmountOut;
+
+        // Construct the SCALE encoded call data for:
+        // pallet_assets::transfer(asset_id: Compact<u32>, target: MultiAddress, amount: Compact<u128>)
+
+        // !!! CRITICAL: The following abi.encodePacked is WRONG for SCALE encoding !!!
+        // !!! You MUST replace this with actual SCALE encoding logic !!!
+        // This likely requires a library or complex manual byte construction.
+        // Example structure (PSEUDOCODE - DO NOT USE):
+        // bytes memory scale_encoded_asset_id = scaleEncodeCompactU32(otherTokenAssetId);
+        // bytes memory scale_encoded_target = scaleEncodeMultiAddressId(recipient); // Assuming target is AccountId32
+        // bytes memory scale_encoded_amount = scaleEncodeCompactU128(amount);
+        // bytes memory data = bytes.concat(
+        //     TRANSFER_SELECTOR,
+        //     scale_encoded_asset_id,
+        //     scale_encoded_target,
+        //     scale_encoded_amount
+        // );
+        bytes memory data; // Placeholder - MUST BE REPLACED WITH ACTUAL SCALE ENCODING
+        revert("SCALE encoding for pallet-assets::transfer not implemented"); // Remove after implementing SCALE encoding
+
+        // Dispatch the call to the pallet-assets module address
+        (bool success, bytes memory returnData) = PALLET_ASSETS_ADDRESS.call(
+            data
         );
 
-        // Check if the contract has enough otherToken (LSP) liquidity
-        uint128 contractOtherBalance = otherToken.balanceOf(address(this));
-        require(
-            contractOtherBalance >= otherAmountOut,
-            "SimpleDexMVP: Insufficient LSP liquidity"
-        );
+        // Note: `success` only means the low-level call dispatch didn't trap.
+        // It DOES NOT guarantee the Substrate extrinsic succeeded.
+        // Proper checking requires inspecting `returnData` for Substrate errors or monitoring events off-chain.
+        require(success, "Low-level call dispatch failed");
+        // TODO: Optionally decode `returnData` to check for Substrate DispatchError
 
-        // 1. WND is already transferred to the contract via msg.value.
-        // No need for transferFrom for WND.
-
-        // 2. Push otherToken (LSP) to the user
-        bool successOther = otherToken.transfer(msg.sender, otherAmountOut);
-        require(
-            successOther,
-            "SimpleDexMVP: LSP token transfer failed. Contract may be locked?"
-        );
-
-        emit Swapped(msg.sender, wndAmountIn, otherAmountOut);
-    }
-
-    /**
-     * @dev Swaps a specific amount of the other token (LSP) for native WND.
-     * The user must have previously approved this contract to spend their LSP.
-     * @param _otherAmountIn The amount of LSP tokens to swap.
-     */
-    function swapOtherForWND(uint128 _otherAmountIn) external {
-        // Not payable
-        require(_otherAmountIn > 0, "SimpleDexMVP: Cannot swap zero LSP");
-
-        // Calculate the amount of WND to send out
-        // amountOut = amountIn * precision / rate
-        // Ensure exchangeRate is not zero to prevent division by zero
-        require(
-            exchangeRate > 0,
-            "SimpleDexMVP: Exchange rate not set or zero"
-        );
-        uint128 wndAmountOut = uint128(
-            (uint256(_otherAmountIn) * RATE_PRECISION) / exchangeRate
-        );
-        require(
-            wndAmountOut > 0,
-            "SimpleDexMVP: Output WND amount would be zero"
-        );
-
-        // Check if the contract has enough WND liquidity
-        uint256 contractWNDBalance = address(this).balance;
-        require(
-            contractWNDBalance >= wndAmountOut,
-            "SimpleDexMVP: Insufficient WND liquidity"
-        );
-
-        // 1. Pull LSP from the user (requires prior user approval)
-        // The user must have called otherToken.approve(address(this), _otherAmountIn)
-        bool successLSP = otherToken.transferFrom(
+        emit Swapped(
             msg.sender,
-            address(this),
-            _otherAmountIn
+            otherTokenAssetId,
+            wndAmountIn,
+            otherAmountOut
         );
-        require(
-            successLSP,
-            "SimpleDexMVP: LSP transferFrom failed. Check allowance."
-        );
-
-        // 2. Push WND (native token) to the user
-        (bool sent, ) = msg.sender.call{value: wndAmountOut}("");
-        require(sent, "SimpleDexMVP: Native WND transfer failed");
-
-        emit SwappedOtherForWND(msg.sender, _otherAmountIn, wndAmountOut);
     }
+
+    // --- swapOtherForWND ---
+    // function swapOtherForWND(uint128 _otherAmountIn) external { ... } // Requires transfer_approved, similar SCALE issues
 
     // --- Owner Functions ---
-
-    /**
-     * @dev Updates the fixed exchange rate.
-     * @param _newRate The new exchange rate (scaled by RATE_PRECISION).
-     */
     function setExchangeRate(uint256 _newRate) external onlyOwner {
         exchangeRate = _newRate;
         emit RateUpdated(_newRate);
     }
 
     /**
-     * @dev Allows the owner to withdraw accumulated WND or excess otherToken (LSP).
-     * Use address(0) or a specific convention for _tokenAddress to withdraw native WND.
-     * @param _tokenAddress The address of the asset contract (LSP) or address(0) for native WND.
-     * @param _amount The amount of tokens/native currency to withdraw.
+     * @dev Allows owner to withdraw WND or LSP. LSP withdrawal requires pallet-assets call.
      */
     function withdrawTokens(
-        address _tokenAddress,
+        address _tokenAddressOrNativeFlag,
         uint128 _amount
     ) external onlyOwner {
-        require(_amount > 0, "SimpleDexMVP: Cannot withdraw zero amount");
+        require(_amount > 0, "Withdraw zero");
 
-        if (_tokenAddress == address(otherToken)) {
-            // Withdraw LSP (pallet-assets token)
-            IAsset token = IAsset(_tokenAddress);
-            uint128 contractBalance = token.balanceOf(address(this));
-            require(
-                contractBalance >= _amount,
-                "SimpleDexMVP: Insufficient LSP balance for withdrawal"
-            );
-            bool success = token.transfer(owner, _amount);
-            require(success, "SimpleDexMVP: LSP withdrawal transfer failed");
-            emit TokensWithdrawn(_tokenAddress, _amount);
-        } else if (_tokenAddress == address(0)) {
-            // Convention: address(0) for native WND
-            // Withdraw WND (native token)
-            uint256 contractNativeBalance = address(this).balance;
-            require(
-                contractNativeBalance >= _amount,
-                "SimpleDexMVP: Insufficient WND balance for withdrawal"
-            );
-            // Use standard transfer for native currency
-            (bool sent, ) = owner.call{value: _amount}("");
-            require(sent, "SimpleDexMVP: Native WND withdrawal failed");
-            emit TokensWithdrawn(address(0), _amount); // Use address(0) in event
+        if (_tokenAddressOrNativeFlag != address(0)) {
+            // Withdraw LSP (pallet asset)
+            // --- Balance Check ---
+            revert("On-chain pallet balance check not implemented");
+
+            // --- Pallet Transfer Call ---
+            address recipient = owner; // Withdraw to owner
+            uint128 amount = _amount;
+
+            // Construct SCALE encoded call data for pallet_assets::transfer
+            // !!! Same SCALE encoding challenge as in swapWNDForOther !!!
+            bytes memory data; // Placeholder - MUST BE REPLACED WITH ACTUAL SCALE ENCODING
+            revert(
+                "SCALE encoding for pallet-assets::transfer not implemented"
+            ); // Remove after implementing SCALE encoding
+
+            (bool success, bytes memory returnData) = PALLET_ASSETS_ADDRESS
+                .call(data);
+            require(success, "Low-level call dispatch failed");
+            // TODO: Optionally decode `returnData`
+
+            emit TokensWithdrawn(address(1), otherTokenAssetId, _amount);
         } else {
-            revert("SimpleDexMVP: Invalid token address for withdrawal");
+            // Withdraw WND (native)
+            uint256 contractNativeBalance = address(this).balance;
+            require(contractNativeBalance >= _amount, "Low WND balance");
+            (bool sent, ) = owner.call{value: _amount}("");
+            require(sent, "WND withdraw fail");
+            emit TokensWithdrawn(address(0), 0, _amount);
         }
     }
 
     // --- View Functions ---
-
-    /**
-     * @dev Gets the current balance of the LSP token held by this contract.
-     * To get the native WND balance, check address(this).balance directly.
-     */
     function getContractLSPBalance() external view returns (uint128) {
-        return otherToken.balanceOf(address(this));
+        revert(
+            "Reading pallet storage via staticcall requires chain-specific key construction and SCALE decoding - not implemented."
+        );
+        return 0;
     }
 
     // --- Fallback ---
-    // Optional: Allow the contract to receive the native currency (e.g., WND)
-    // This is implicitly handled by payable functions now.
     receive() external payable {}
 }

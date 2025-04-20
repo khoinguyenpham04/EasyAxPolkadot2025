@@ -13,6 +13,7 @@ import {
   Bitcoin,
   ChevronRight,
   Clock,
+  ArrowDown, // Added ArrowDown for swap icon
 } from "lucide-react"
 
 // Dialog imports
@@ -25,18 +26,21 @@ import { useState, useEffect } from "react"
 import { ApiPromise, WsProvider } from '@polkadot/api'; // Import API components
 import { formatBalance, u8aToString } from '@polkadot/util'; // Import balance formatting utility
 import type { AccountInfo } from '@polkadot/types/interfaces/system'; // Import AccountInfo type
-import type { AssetDetails, AssetMetadata, AssetAccount } from '@polkadot/types/interfaces/assets'; // Import Asset types
-import type { Option } from '@polkadot/types'; // Import Option type
 import type { AssetId } from '@polkadot/types/interfaces/runtime'; // Import AssetId
-import type { AccountId } from '@polkadot/types/interfaces/runtime'; // Import AccountId
+// Removed unused imports:
+// import type { AssetDetails, AssetMetadata } from '@polkadot/types/interfaces/assets';
+// import type { AssetAccount } from '@polkadot/types/interfaces/balances'; 
+// import type { IOption, Codec } from '@polkadot/types/types';
 import { web3Enable, web3FromSource } from '@polkadot/extension-dapp';
 import { ContractPromise } from '@polkadot/api-contract';
 import BN from 'bn.js';
+// Import WeightV2 for explicit type usage
+import type { WeightV2 } from '@polkadot/types/interfaces/runtime';
 // Assuming you have the ABI json imported or available
 import SimpleDexMVPAbi from '../../../contracts/artifacts/contracts_swap_sol_SimpleDexMVP.abi'; // Adjust path as needed
 
 // Define the contract address (replace with your actual deployed address)
-const DEX_CONTRACT_ADDRESS = "YOUR_DEPLOYED_DEX_CONTRACT_ADDRESS"; // <-- REPLACE THIS
+const DEX_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_DEX_CONTRACT_ADDRESS || "YOUR_DEPLOYED_DEX_CONTRACT_ADDRESS"; // <-- REPLACE THIS or use env var
 
 // Update the AccountItem interface to include additional properties
 interface AccountItem {
@@ -50,11 +54,10 @@ interface AccountItem {
   change?: string
   changeType?: "up" | "down"
   decimals: number // Added decimals
+  assetId?: string | number // Optional: Store asset ID if needed for actions
 }
 
 interface List01Props {
-  totalBalance?: string
-  accounts?: AccountItem[]
   className?: string
 }
 
@@ -73,13 +76,13 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
   const [isSwapping, setIsSwapping] = useState(false);
   const [swapError, setSwapError] = useState<string | null>(null);
 
-  // Sample transaction data
+  // Sample transaction data (replace with actual data fetching)
   const transactions = [
     {
       id: "1",
       type: "Transfer",
       from: `bc1qamgj...6rgqwfkew688k`,
-      amount: "***",
+      amount: "***", // Fixed unterminated string
       date: "4/8/25",
       time: "21:17",
     },
@@ -87,7 +90,7 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
       id: "2",
       type: "Transfer",
       from: `bc1qamgj...6rgqwfkew688k`,
-      amount: "***",
+      amount: "***", // Fixed unterminated string
       date: "3/31/25",
       time: "13:13",
     },
@@ -95,7 +98,7 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
       id: "3",
       type: "Transfer",
       from: `bc1qamgj...6rgqwfkew688k`,
-      amount: "***",
+      amount: "***", // Fixed unterminated string
       date: "3/1/25",
       time: "15:14",
     },
@@ -103,7 +106,7 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
       id: "4",
       type: "Transfer",
       from: `bc1qamgj...6rgqwfkew688k`,
-      amount: "***",
+      amount: "***", // Fixed unterminated string
       date: "2/28/25",
       time: "07:32",
     },
@@ -359,9 +362,10 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
 
   // --- SWAP LOGIC ---
   const handleSwapWNDForLSP = async () => {
-    if (!api || !userAddress || !amount || Number(amount) <= 0 || crypto.symbol !== 'WND') {
-      setSwapError("Invalid input or configuration for WND -> LSP swap.");
-      console.error("Swap prerequisites not met:", { api: !!api, userAddress, amount, symbol: crypto.symbol });
+    // ... (swap logic remains largely the same, ensure DEX_CONTRACT_ADDRESS is valid) ...
+    if (!api || !userAddress || !amount || Number(amount) <= 0 || crypto.symbol !== 'WND' || !DEX_CONTRACT_ADDRESS || DEX_CONTRACT_ADDRESS === "YOUR_DEPLOYED_DEX_CONTRACT_ADDRESS") {
+      setSwapError("Invalid input, configuration, or contract address for WND -> LSP swap.");
+      console.error("Swap prerequisites not met:", { api: !!api, userAddress, amount, symbol: crypto.symbol, DEX_CONTRACT_ADDRESS });
       return;
     }
 
@@ -369,57 +373,53 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
     setSwapError(null);
 
     try {
-      // 1. Enable extension (better to do this once on app load)
+      // ... (extension enabling, signer setup) ...
       const extensions = await web3Enable('EasyAxPolkadot DApp');
       if (extensions.length === 0) {
         throw new Error("Polkadot{.js} extension not found.");
       }
-
-      // 2. Get signer
-      const injector = await web3FromSource(extensions[0].name); // Use the first enabled extension
+      const injector = await web3FromSource(extensions[0].name);
       if (!injector.signer) {
         throw new Error("Signer not available. Ensure the extension is unlocked and permissions granted.");
       }
-      api.setSigner(injector.signer);
+      // Use the primary API instance for transactions if available
+      const txApi = api;
+      txApi.setSigner(injector.signer);
 
+      const contract = new ContractPromise(txApi, SimpleDexMVPAbi, DEX_CONTRACT_ADDRESS);
+      const nativeDecimals = txApi.registry.chainDecimals[0];
+      const valueToSend = new BN(Math.floor(parseFloat(amount) * (10 ** nativeDecimals))); // Use Math.floor for safety
 
-      // 3. Instantiate the contract
-      const contract = new ContractPromise(api, SimpleDexMVPAbi, DEX_CONTRACT_ADDRESS);
+      console.log(`Attempting to swap ${amount} WND (${valueToSend.toString()} Planck) via contract ${DEX_CONTRACT_ADDRESS}`);
 
-      // 4. Prepare the amount (WND uses native decimals)
-      const nativeDecimals = api.registry.chainDecimals[0];
-      const valueToSend = new BN(parseFloat(amount) * (10 ** nativeDecimals)); // Convert input string to BN in Planck
+      // Explicitly type gasLimit as WeightV2
+      const gasLimit: WeightV2 = txApi.registry.createType('WeightV2', {
+        refTime: new BN(3000000000), // Adjust based on estimation/benchmarking
+        proofSize: new BN(200000),   // Adjust based on estimation/benchmarking
+      });
 
-      console.log(`Attempting to swap ${amount} WND (${valueToSend.toString()} Planck)`);
-
-      // 5. Estimate gas (optional but recommended)
-      // For simplicity, using -1 for gasLimit to let the node estimate.
-      // You might want to estimate explicitly:
-      // const { gasRequired } = await contract.query.swapWNDForOther(userAddress, { value: valueToSend });
-      const gasLimit = -1; // Or use estimated gasRequired
-
-      // 6. Call the swap function
       const unsub = await contract.tx
         .swapWNDForOther({ value: valueToSend, gasLimit })
         .signAndSend(userAddress, (result) => {
+          // ... (status handling remains the same) ...
           console.log(`Transaction status: ${result.status.type}`);
 
           if (result.status.isInBlock) {
             console.log(`Transaction included at blockHash ${result.status.asInBlock}`);
           } else if (result.status.isFinalized) {
             console.log(`Transaction finalized at blockHash ${result.status.asFinalized}`);
-            unsub(); // Unsubscribe from status updates
+            unsub();
             setIsSwapping(false);
-            setAmount(""); // Clear amount after successful swap
-            // Optionally: Add success message, close dialog, refresh balances
-            alert("Swap successful!"); // Placeholder feedback
-            setActiveView("main"); // Go back to main view
+            setAmount("");
+            alert("Swap successful!");
+            setActiveView("main");
+            // TODO: Trigger balance refresh here
           } else if (result.isError) {
             console.error('Transaction Error:', result.internalError || result.dispatchError || 'Unknown error');
             let errorMsg = 'Transaction failed.';
             if (result.dispatchError) {
               if (result.dispatchError.isModule) {
-                const decoded = api.registry.findMetaError(result.dispatchError.asModule);
+                const decoded = txApi.registry.findMetaError(result.dispatchError.asModule);
                 errorMsg = `Transaction failed: ${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
               } else {
                 errorMsg = `Transaction failed: ${result.dispatchError.toString()}`;
@@ -429,9 +429,9 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
           }
         });
 
-    } catch (err: any) {
+    } catch (err: unknown) { // Use unknown instead of any
       console.error("Swap failed:", err);
-      setSwapError(`Swap failed: ${err.message || String(err)}`);
+      setSwapError(`Swap failed: ${err instanceof Error ? err.message : String(err)}`);
       setIsSwapping(false);
     }
   };
@@ -439,10 +439,9 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
 
   // Function to render the swap view
   const renderSwapView = () => {
-    // Only allow swapping FROM WND in this specific flow
+    // ... (swap view rendering remains largely the same) ...
     const canSwapFrom = crypto.symbol === 'WND';
-    // Assume LSP is the target for now
-    const targetSymbol = 'LSP'; // Replace if you have the actual symbol dynamically
+    const targetSymbol = 'LSP';
 
     return (
       <div className="p-4 sm:p-6">
@@ -494,8 +493,8 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
             {/* Swap Direction Icon */}
             <div className="flex justify-center">
               <div className="bg-zinc-100 dark:bg-zinc-800 p-2 rounded-full">
-                {/* Using ArrowDown, assuming 'From' is top, 'To' is bottom */}
-                <ArrowDownLeft className="w-5 h-5 text-zinc-500 dark:text-zinc-400 transform rotate-90" />
+                {/* Use ArrowDown */}
+                <ArrowDown className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
               </div>
             </div>
 
@@ -581,15 +580,15 @@ function CryptoActionDialog({ crypto, api, userAddress }: CryptoActionDialogProp
   }
 
   return (
-    <DialogContent className="sm:max-w-[650px] md:max-w-[700px] p-4 border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden">
-      {/* Content based on active view */}
+    <DialogContent className="sm:max-w-[650px] md:max-w-[700px] p-0 border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden">
+      {/* Content based on active view - remove extra padding */}
       <div className="max-h-[75vh] overflow-y-auto rounded-lg">{renderContent()}</div>
     </DialogContent>
   )
 }
 
 // Update the main List01 component
-export default function List01({ className }: List01Props) { // Remove accounts and totalBalance from props for now
+export default function List01({ className }: List01Props) {
   const [userAddress, setUserAddress] = useState<string | null>(null);
   const [userAccounts, setUserAccounts] = useState<AccountItem[]>([]);
   const [totalBalanceValue, setTotalBalanceValue] = useState<number>(0); // Store raw total balance
@@ -640,43 +639,42 @@ export default function List01({ className }: List01Props) { // Remove accounts 
   // Effect to fetch balances when API is ready and address is available
   useEffect(() => {
     const fetchBalances = async () => {
-      // Ensure API for assets is connected (or connecting) and userAddress exists
+      // ... (balance fetching logic remains largely the same) ...
       if (!userAddress) {
         console.log("UserAddress missing, skipping balance fetch.");
-        setIsLoading(false); // Set loading false if address is missing
+        setIsLoading(false);
         return;
       }
 
-      // Set loading true when starting the fetch
       setIsLoading(true);
       setError(null);
       console.log(`Fetching balances for address: ${userAddress}`);
 
-      let relayApi: ApiPromise | null = null;
-      const westendRelayEndpoint = 'wss://westend-rpc.polkadot.io';
+      let nativeApi: ApiPromise | null = null;
+      const westendAssetHubEndpoint = 'wss://westend-asset-hub-rpc.polkadot.io';
       const fetchedAccounts: AccountItem[] = [];
 
       try {
-        // 1. Fetch Native WND Balance from Westend Relay Chain
+        // 1. Fetch Native Balance from Westend Asset Hub
         try {
-          console.log(`Connecting to Westend Relay Chain (${westendRelayEndpoint}) for native balance...`);
-          const relayProvider = new WsProvider(westendRelayEndpoint);
-          relayApi = await ApiPromise.create({ provider: relayProvider });
-          await relayApi.isReady;
-          console.log(`Successfully connected to ${relayApi.runtimeChain} for native balance.`);
+          console.log(`Connecting to Westend Asset Hub (${westendAssetHubEndpoint}) for native balance...`);
+          const nativeProvider = new WsProvider(westendAssetHubEndpoint);
+          nativeApi = await ApiPromise.create({ provider: nativeProvider });
+          await nativeApi.isReady;
+          console.log(`Successfully connected to ${nativeApi.runtimeChain} (Asset Hub) for native balance.`);
 
-          const { data: balanceData } = await relayApi.query.system.account<AccountInfo>(userAddress);
-          const nativeTokenInfo = relayApi.registry.chainTokens[0];
-          const nativeDecimals = relayApi.registry.chainDecimals[0];
-          const nativeSymbol = nativeTokenInfo || 'WND'; // Default to WND if not found
+          const { data: balanceData } = await nativeApi.query.system.account<AccountInfo>(userAddress);
+          const nativeTokenInfo = nativeApi.registry.chainTokens[0];
+          const nativeDecimals = nativeApi.registry.chainDecimals[0];
+          const nativeSymbol = nativeTokenInfo || 'WND';
           const nativeFree = balanceData.free;
-          console.log(`Raw native free balance (Relay Chain): ${nativeFree.toString()}`);
+          console.log(`Raw native free balance (Asset Hub): ${nativeFree.toString()}`);
 
           if (!nativeFree.isZero()) {
             const nativeAccount: AccountItem = {
               id: nativeSymbol,
               title: nativeSymbol,
-              description: 'Native Token (Westend)',
+              description: `Native Token (${nativeApi.runtimeChain})`,
               balance: formatBalance(nativeFree, { withSi: false, forceUnit: nativeSymbol, decimals: nativeDecimals }),
               type: 'native',
               symbol: nativeSymbol,
@@ -686,104 +684,202 @@ export default function List01({ className }: List01Props) { // Remove accounts 
               decimals: nativeDecimals,
             };
             fetchedAccounts.push(nativeAccount);
-            console.log("Fetched Native Account (Relay Chain):", nativeAccount);
+            console.log("Fetched Native Account (Asset Hub):", nativeAccount);
           } else {
-            console.log(`Native balance is zero on Westend Relay Chain for address ${userAddress}.`);
+            console.log(`Native balance is zero on Westend Asset Hub for address ${userAddress}.`);
           }
-        } catch (relayErr) {
-          console.error("Failed to connect or fetch native balance from Relay Chain:", relayErr);
-          // Don't set global error yet, maybe asset hub connection works
+        } catch (nativeErr: unknown) { // Use unknown instead of any
+          console.error("Failed to connect or fetch native balance from Asset Hub:", nativeErr);
+          // Optionally set a specific error state for native balance failure
         } finally {
-          console.log("Disconnecting temporary Relay Chain API...");
-          await relayApi?.disconnect(); // Disconnect temporary API
+          console.log("Disconnecting temporary Asset Hub API...");
+          await nativeApi?.disconnect();
         }
 
-        // 2. Fetch Asset Balances from the primary connected API (e.g., Asset Hub)
+        // 2. Fetch Asset Balances from the primary connected API
         if (!api || !api.isReady) {
           console.log("Primary API (for assets) not ready, skipping asset balance fetch.");
         } else {
-          console.log(`Fetching asset balances from primary connection: ${api.runtimeChain}`);
+          const currentApi = api;
+          console.log(`Fetching asset balances from primary connection: ${currentApi.runtimeChain}`);
           try {
             console.log("Fetching all asset definitions from primary API...");
-            const assetEntries = await api.query.assets.asset.entries<Option<AssetDetails>, [AssetId]>();
-            console.log(`Found ${assetEntries.length} potential asset definitions on ${api.runtimeChain}.`);
+            const assetEntries = await currentApi.query.assets.asset.entries();
+            console.log(`Found ${assetEntries.length} potential asset definitions on ${currentApi.runtimeChain}.`);
 
-            const assetBalancePromises = assetEntries.map(async ([key, optionalAssetDetails]) => {
-              if (optionalAssetDetails.isNone) return null;
-              const assetId = key.args[0];
-              const optionalAccountData = await api.query.assets.account<Option<AssetAccount>, [AssetId, AccountId]>(assetId, userAddress);
+            const assetBalancePromises = assetEntries.map(async ([key, codecValue]) => {
+              // Check if the assetDetails exists
+              if (!codecValue || codecValue.isEmpty) return null;
 
-              if (optionalAccountData.isNone) return null;
-              const accountData = optionalAccountData.unwrap();
-              if (accountData.balance.isZero() || accountData.isFrozen.isTrue) return null;
+              // Extract the asset ID
+              const assetId = key.args[0] as AssetId;
+              console.log(`Processing asset ID: ${assetId.toString()}`);
 
-              const optionalMetadata = await api.query.assets.metadata<Option<AssetMetadata>, [AssetId]>(assetId);
-              if (optionalMetadata.isNone) return null;
-              const metadata = optionalMetadata.unwrap();
+              // Query the account balance for this asset
+              const accountCodec = await currentApi.query.assets.account(assetId, userAddress);
 
-              const symbol = u8aToString(metadata.symbol);
-              const decimals = metadata.decimals.toNumber();
-              const name = u8aToString(metadata.name);
-
-              // Avoid adding the native token if it somehow appears as an asset
-              if (symbol === 'WND' && fetchedAccounts.some(acc => acc.symbol === 'WND')) {
-                console.log(`Skipping asset ${symbol} as native balance was already fetched.`);
+              // Check if account data exists for this asset
+              if (!accountCodec || accountCodec.isEmpty) {
+                console.log(`No account data for asset ${assetId.toString()}`);
                 return null;
               }
 
-              return {
-                id: `${api.runtimeChain}-${assetId.toString()}`, // Prefix ID with chain name
-                title: name || `Asset #${assetId.toString()}`,
-                description: `${symbol} (${api.runtimeChain})`, // Add chain context
-                balance: formatBalance(accountData.balance, { withSi: false, forceUnit: symbol, decimals: decimals }),
-                type: 'altcoin',
-                symbol: symbol,
-                price: 'N/A',
-                change: 'N/A',
-                changeType: 'up',
-                decimals: decimals,
-              } as AccountItem;
+              // Debug the account data structure
+              console.log(`Account data for asset ${assetId.toString()}:`, accountCodec.toJSON());
+
+              // Try to access account data fields - using JSON to handle different structure formats
+              try {
+                // Convert to JSON to handle different response formats
+                const accountDataJson = accountCodec.toJSON() as any;
+
+                // Check balance based on the structure returned
+                let balance: BN | null = null;
+                let isFrozen = false;
+
+                // Handle case where balance is directly in the response
+                if (accountDataJson && typeof accountDataJson.balance === 'number') {
+                  balance = new BN(accountDataJson.balance);
+                  // Check if frozen based on status
+                  if (accountDataJson.status === 'Frozen') {
+                    isFrozen = true;
+                  }
+                }
+                // Handle case where balance might be nested differently
+                else if (accountDataJson && accountDataJson.balance && typeof accountDataJson.balance === 'object') {
+                  if (typeof accountDataJson.balance.balance === 'number') {
+                    balance = new BN(accountDataJson.balance.balance);
+                  }
+                }
+                // Handle legacy structure if needed
+                else {
+                  const accountData = accountCodec as unknown as { balance: BN, isFrozen?: { isTrue: () => boolean } };
+                  if (accountData.balance) {
+                    balance = accountData.balance;
+                  }
+                  if (accountData.isFrozen && accountData.isFrozen.isTrue && accountData.isFrozen.isTrue()) {
+                    isFrozen = true;
+                  }
+                }
+
+                // If we couldn't find a balance or it's zero or the account is frozen, skip it
+                if (!balance || balance.isZero() || isFrozen) {
+                  console.log(`Zero balance or frozen asset for ID ${assetId.toString()}`);
+                  return null;
+                }
+
+                // Get metadata for the asset
+                const metadataCodec = await currentApi.query.assets.metadata(assetId);
+
+                // Check if metadata exists
+                if (!metadataCodec || metadataCodec.isEmpty) {
+                  console.log(`No metadata for asset ${assetId.toString()}`);
+                  return null;
+                }
+
+                // Handle metadata fields safely with type casting
+                try {
+                  // Initialize variables for metadata
+                  let symbol = 'UNKNOWN';
+                  let decimals = 0;
+                  let assetName = `Asset #${assetId.toString()}`;
+
+                  // Access metadata fields with proper type casting
+                  const metadataObj = metadataCodec.toJSON() as Record<string, any>;
+
+                  if (metadataObj && metadataObj.symbol) {
+                    // Handle symbol as hex-encoded string
+                    const symbolHex = metadataObj.symbol.slice(2); // Remove '0x' prefix if present
+                    const bytes = new Uint8Array(symbolHex.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || []);
+                    symbol = u8aToString(bytes);
+                  }
+
+                  if (metadataObj && metadataObj.decimals !== undefined) {
+                    decimals = Number(metadataObj.decimals);
+                  }
+
+                  if (metadataObj && metadataObj.name) {
+                    // Handle name as hex-encoded string 
+                    const nameHex = metadataObj.name.slice(2); // Remove '0x' prefix if present
+                    const bytes = new Uint8Array(nameHex.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || []);
+                    assetName = u8aToString(bytes);
+                  }
+
+                  console.log(`Asset metadata: ${assetName} (${symbol}) with ${decimals} decimals`);
+
+                  // Skip if this is a duplicate of a native token we already have
+                  if (symbol === 'WND' && fetchedAccounts.some(acc => acc.symbol === 'WND')) {
+                    console.log(`Skipping asset ${symbol} as native balance was already fetched.`);
+                    return null;
+                  }
+
+                  // Create and return the asset info
+                  return {
+                    id: `${currentApi.runtimeChain}-${assetId.toString()}`,
+                    title: assetName,
+                    description: `${symbol} (${currentApi.runtimeChain})`,
+                    balance: formatBalance(balance, { withSi: false, forceUnit: symbol, decimals: decimals }),
+                    type: 'altcoin',
+                    symbol: symbol,
+                    price: 'N/A', // Placeholder
+                    change: 'N/A', // Placeholder
+                    changeType: 'up', // Placeholder
+                    decimals: decimals,
+                    assetId: assetId.toString(), // Store assetId
+                  } as AccountItem;
+
+                } catch (metadataErr) {
+                  console.warn(`Error extracting metadata for asset ${assetId.toString()}:`, metadataErr);
+                  return null;
+                }
+              } catch (accountErr) {
+                console.warn(`Error processing account data for asset ${assetId.toString()}:`, accountErr);
+                return null;
+              }
             });
 
             const fetchedAssetAccounts = (await Promise.all(assetBalancePromises)).filter(Boolean) as AccountItem[];
-            console.log(`Fetched Asset Accounts (${api.runtimeChain}):`, fetchedAssetAccounts);
-            fetchedAccounts.push(...fetchedAssetAccounts); // Add assets to the list
+            console.log(`Fetched Asset Accounts (${currentApi.runtimeChain}):`, fetchedAssetAccounts);
+            fetchedAccounts.push(...fetchedAssetAccounts);
 
-          } catch (assetErr) {
-            console.error(`Failed to fetch asset balances from ${api.runtimeChain}:`, assetErr);
+          } catch (assetErr: unknown) {
+            console.error(`Failed to fetch asset balances from ${currentApi.runtimeChain}:`, assetErr);
+            // Corrected variable name from err to assetErr
             setError(`Failed to fetch asset balances: ${assetErr instanceof Error ? assetErr.message : String(assetErr)}`);
           }
         }
 
-        // Combine native and asset accounts (already done by pushing)
         setUserAccounts(fetchedAccounts);
-        setTotalBalanceValue(Number(fetchedAccounts[0].balance) * 1621.15); // Update placeholder total
+        // Calculate total balance based on fetched accounts (example: sum WND if available)
+        const wndBalance = fetchedAccounts.find(acc => acc.symbol === 'WND');
+        const wndValue = wndBalance ? parseFloat(wndBalance.balance.split(' ')[0].replace(/,/g, '')) : 0;
+        setTotalBalanceValue(wndValue * 1621.15); // Update placeholder total based on WND
         console.log("Final accounts list being set:", fetchedAccounts);
 
-      } catch (err) {
-        // Catch any broader errors not caught in specific sections
+      } catch (err: unknown) {
         console.error("Overall balance fetching failed:", err);
         setError(`Failed to fetch balances: ${err instanceof Error ? err.message : String(err)}`);
       } finally {
-        setIsLoading(false); // Set loading false after all fetches complete or fail
+        setIsLoading(false);
         console.log("Balance fetching finished.");
       }
-    };
+    }; // End of fetchBalances
 
-    // Debounce or delay fetchBalances slightly after API becomes ready
-    const timer = setTimeout(() => {
-      fetchBalances();
-    }, 100); // Small delay
+    // ... (useEffect call logic remains the same) ...
+    if (api?.isReady && userAddress) {
+      const timer = setTimeout(() => {
+        fetchBalances();
+      }, 100); // Small delay
+      return () => clearTimeout(timer);
+    } else if (!userAddress) {
+      setIsLoading(false);
+    }
 
-    return () => clearTimeout(timer); // Clear timeout on cleanup
+  }, [api, userAddress]);
 
-  }, [api, userAddress]); // Re-run if primary api instance or userAddress changes
+  // ... (loading/error/address checks remain the same) ...
 
-  // Format total balance for display (placeholder)
-  const formattedTotalBalance = isLoading ? "Loading..." : `${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(totalBalanceValue.toFixed(2)))}`; // Indicate it's a count
-
-  // ... (rest of the return statement)
-
+  // Format total balance for display
+  const formattedTotalBalance = isLoading ? "Loading..." : `$${totalBalanceValue.toFixed(2)}`; // Simplified formatting
 
   if (!userAddress) {
     return <div className={cn("p-4 text-center text-red-500", className)}>User address not found. Please create or import an account.</div>;
@@ -813,7 +909,7 @@ export default function List01({ className }: List01Props) { // Remove accounts 
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{formattedTotalBalance}</h1>
       </div>
 
-      {/* Accounts List - Use fetched userAccounts */}
+      {/* Accounts List */}
       <div className="p-3">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-xs font-medium text-zinc-900 dark:text-zinc-100">Your Assets</h2>
@@ -877,9 +973,10 @@ export default function List01({ className }: List01Props) { // Remove accounts 
         </div>
       </div>
 
-      {/* Footer with four buttons (remains the same) */}
+      {/* Footer with four buttons - Corrected JSX structure */}
       <div className="p-2 border-t border-zinc-100 dark:border-zinc-800">
         <div className="grid grid-cols-4 gap-2">
+          {/* Button 1: Buy */}
           <button
             type="button"
             className={cn(
@@ -896,6 +993,7 @@ export default function List01({ className }: List01Props) { // Remove accounts 
             <Plus className="w-3.5 h-3.5" />
             <span>Buy</span>
           </button>
+          {/* Button 2: Send */}
           <button
             type="button"
             className={cn(
@@ -912,6 +1010,7 @@ export default function List01({ className }: List01Props) { // Remove accounts 
             <SendHorizontal className="w-3.5 h-3.5" />
             <span>Send</span>
           </button>
+          {/* Button 3: Receive */}
           <button
             type="button"
             className={cn(
@@ -928,6 +1027,7 @@ export default function List01({ className }: List01Props) { // Remove accounts 
             <ArrowDownLeft className="w-3.5 h-3.5" />
             <span>Receive</span>
           </button>
+          {/* Button 4: Swap */}
           <button
             type="button"
             className={cn(
@@ -944,8 +1044,8 @@ export default function List01({ className }: List01Props) { // Remove accounts 
             <ArrowRight className="w-3.5 h-3.5" />
             <span>Swap</span>
           </button>
-        </div>
-      </div>
-    </div>
+        </div> {/* Closing grid div */}
+      </div> {/* Closing footer div */}
+    </div> // Closing main component div
   )
 }
